@@ -1,4 +1,3 @@
-````markdown
 # YaClaw
 ```
     ██╗   ██╗ █████╗ 
@@ -14,6 +13,7 @@
          ╚██████╗███████╗██║  ██║╚███╔███╔╝
           ╚═════╝╚══════╝╚═╝  ╚═╝ ╚══╝╚══╝
 ```
+
 [日本語](README_ja.md)
 
 > **Yet Another 'Claw'-like Tool — Use Your Favorite AI Coding CLI, Through Your Favorite Channel**
@@ -128,4 +128,3 @@ Agent Z ---{from: Z, to: A, via: [X, Y, Z]}--> Channel A
 ## Disclaimer
 
 This project is experimental and has had little consideration given to security. Users are responsible for taking their own measures to protect against information leaks from SNS services and communication channels. AI coding CLI tools may behave unexpectedly, including hallucinations. Users are responsible for taking necessary precautions such as protecting data from the tools. The author assumes no liability for any damages arising from the use of this program.
-````

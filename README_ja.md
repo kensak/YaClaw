@@ -104,23 +104,23 @@ cat log/log-20260301.json | jq -c -r 'select(.type == "trace") | [.time, .messag
 
 #### 基本動作
 
-チャンネル A ---{from: A, to: X}--> エージェント X
+チャンネル A ---{from: A, to: X}--> エージェント X  
 エージェント X ---{from: X, to: A, via: X}--> チャンネル A
 
 #### `reply_to` による返信先の変更
 
 これは、例えば`schedule`チャンネル（HEARTBEATのように定期的にプロンプトをAIに処理させる）を実現するのに便利です。
 
-チャンネル A ---{from: A, to: X, reply_to: B}--> エージェント X
+チャンネル A ---{from: A, to: X, reply_to: B}--> エージェント X  
 エージェント X ---{from: X, to: B, via: X}--> チャンネル B
 
 #### 転送
 
 メッセージの送信時にあらかじめ転送先を指定しておくことができます。
 
-チャンネル A ---{from: A, to: [X, Y, Z]}--> エージェント X
-エージェント X ---{from: X, to: [Y, Z], reply_to: A, via: X}--> エージェント Y
-エージェント Y ---{from: Y, to: Z, reply_to: A, via: [X, Y]}--> エージェント Z
+チャンネル A ---{from: A, to: [X, Y, Z]}--> エージェント X  
+エージェント X ---{from: X, to: [Y, Z], reply_to: A, via: X}--> エージェント Y  
+エージェント Y ---{from: Y, to: Z, reply_to: A, via: [X, Y]}--> エージェント Z  
 エージェント Z ---{from: Z, to: A, via: [X, Y, Z]}--> チャンネル A
 
 ## 免責事項
