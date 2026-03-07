@@ -1,0 +1,34 @@
+{
+    "channel": {
+        "discord": {
+            "plugin": "channel_discord",
+            "channel_id": "${DISCORD_CHANNEL_ID}",
+            "bot_token": "${DISCORD_BOT_TOKEN}",
+            "agent": "codex"
+        },
+        "schedule": {
+            "plugin": "channel_schedule",
+            "entry": {
+                "morning_routine": {
+                    "agent": "codex",
+                    "reply_to": "discord",
+                    "everyday_at": "08:00",
+                    "message": "What is the weather today?"
+                },
+                "heartbeat": {
+                    "agent": "codex",
+                    "reply_to": "discord",
+                    "every_n_minutes": 30,
+                    "message": "Is everything okay?"
+                }
+            }
+        }
+    },
+    "agent": {
+        "codex": {
+            "plugin": "agent_codex_cli",
+            "work_dir": "workspace/codex",
+            "default_channel": "discord"
+        }
+    }
+}
