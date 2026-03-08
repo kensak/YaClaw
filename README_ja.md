@@ -181,8 +181,8 @@ cat log/log-20260301.json | jq -c -r 'select(.type == "trace") | [.time, .messag
 
 ```
 チャンネル A ---{from: A, to: [X, Y, Z]}---------> エージェント X
-エージェント X ---{to: [Y, Z], reply_to: A}-------> エージェント Y
-エージェント Y ---{to: Z, reply_to: A}-----------> エージェント Z
+エージェント X ---{from: X, to: [Y, Z], reply_to: A, via: X}---> エージェント Y
+エージェント Y ---{from: Y, to: Z, reply_to: A, via: [X, Y]}---> エージェント Z
 エージェント Z ---{to: A, via: [X,Y,Z]}----------> チャンネル A
 ```
 

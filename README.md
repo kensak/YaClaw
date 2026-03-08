@@ -181,9 +181,9 @@ Pre-specify a forwarding chain when sending a message.
 
 ```
 Channel A  ---{from: A, to: [X, Y, Z]}---------> Agent X
-Agent X    ---{to: [Y, Z], reply_to: A}--------> Agent Y
-Agent Y    ---{to: Z, reply_to: A}-------------> Agent Z
-Agent Z    ---{to: A, via: [X,Y,Z]}------------> Channel A
+Agent X    ---{from: X, to: [Y, Z], reply_to: A, via: X}---> Agent Y
+Agent Y    ---{from: Y, to: Z, reply_to: A, via: [X, Y]}---> Agent Z
+Agent Z    ---{from: Z, to: A, via: [X,Y,Z]}------------> Channel A
 ```
 
 </details>
