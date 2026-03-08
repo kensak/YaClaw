@@ -32,6 +32,7 @@ class ChannelRandomTalker(Channel):
       # Use `create_request_skeleton` if you want to control the structure of the request message, e.g. to specify "reply_to" or other fields.
       #request = await self.create_request_skeleton()
       #request["body"] = body
+      #await self.handle_request_message(request)
 
       await self.handle_request_message(body)
 

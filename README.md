@@ -146,6 +146,161 @@ cat log/log-20260301.json | jq -c -r 'select(.type == "trace") | [.time, .messag
 ---
 
 <details>
+<summary>Writing Plugins</summary>
+
+Drop a Python file in the `plugins/` folder and define **exactly one** class that subclasses `Channel` or `Agent`. The class name is arbitrary; the filename (without extension) is what you put in the `plugin` field of `settings.json`.
+
+```json
+{
+    "channel": { "my_ch": { "plugin": "my_channel_plugin", "agent": "my_agent", ... } },
+    "agent":   { "my_agent": { "plugin": "my_agent_plugin", ... } }
+}
+```
+
+---
+
+### Channel Plugin (basic)
+
+See `plugins/channel_random_talker.py` for a minimal channel implementation.
+
+```python
+from yaclaw.channel import Channel
+
+class MyChannel(Channel):
+
+    async def initialize(self, channel_name, channel_settings):
+        # One-time setup. self.channel_name and self.channel_settings
+        # are already set by the framework at this point.
+        # Return False to abort startup on failure.
+        return True
+
+    async def start_listener(self):
+        # Put your incoming-message loop here.
+        # Simplest form — pass a plain string to the agent:
+        await self.handle_request_message("Hello!")
+
+        # To control reply_to or other fields explicitly:
+        # request = await self.create_request_skeleton()
+        # request["body"] = "Hello!"
+        # request["reply_to"] = "other_channel"
+        # await self.handle_request_message(request)
+
+    async def handle_response_message(self, response):
+        # Called when the agent sends a reply.
+        # response["body"] contains the response text.
+        print(response["body"])
+
+    async def stop(self):
+        # Signal your loop to stop (e.g. set a shutdown flag).
+        pass
+
+    async def finalize(self):
+        # Release any resources.
+        pass
+```
+
+**Notes**
+
+- `handle_request_message(msg)` accepts either a **plain string** or a **dict** (request message).
+- `create_request_skeleton()` returns a dict with `from`, `to`, and `reply_to` pre-filled.
+- `handle_response_message` is called serially via an internal queue — no need to worry about concurrent calls.
+
+---
+
+### SNS / Bot Channel Plugin
+
+See `plugins/channel_discord.py` for an example that integrates with an external service.
+
+```python
+from yaclaw.channel import Channel
+
+class MySnsBotChannel(Channel):
+
+    async def initialize(self, channel_name, channel_settings):
+        # Read credentials from settings.json
+        self.token = channel_settings.get("bot_token", None)
+        if self.token is None:
+            return False   # Missing required setting — abort
+        self.client = MyBotClient()
+        return True
+
+    async def start_listener(self):
+        # Start the external library's async event loop here.
+        # This method should block until the loop ends.
+        @self.client.on_message
+        async def on_message(msg):
+            await self.handle_request_message(msg.text)
+
+        await self.client.start(self.token)
+
+    async def handle_response_message(self, response):
+        body = response.get("body", "")
+        if not body:          # Skip empty responses
+            return
+        await self.client.send(body)
+
+    async def stop(self):
+        await self.client.close()   # Always close the client cleanly
+
+    async def finalize(self):
+        pass
+```
+
+**Notes**
+
+- `await` the external library's event loop inside `start_listener`.
+- Guard against empty `response["body"]` to avoid sending blank messages.
+- Close your client in `stop` so the `asyncio.TaskGroup` can shut down cleanly.
+
+---
+
+### Agent Plugin
+
+See `plugins/agent_echo.py` for a minimal agent implementation.
+
+```python
+from yaclaw.agent import Agent
+
+class MyAgent(Agent):
+
+    async def initialize(self, agent_name, agent_settings):
+        # One-time setup. Return False to abort startup.
+        return True
+
+    async def start_handler(self):
+        # Runs concurrently with the request queue (e.g. to launch
+        # an external process). For simple agents, just return.
+        pass
+
+    async def handle_request_message(self, request):
+        # request["body"] contains the incoming text.
+        body = request["body"]
+
+        # Build a response skeleton (from/to/via are set automatically)
+        response = await self.create_response_skeleton(request)
+        response["body"] = f"Got it: {body}"
+
+        # Send the response back to the channel (or next agent)
+        await self.handle_response_message(response)
+
+    async def stop(self):
+        pass
+
+    async def finalize(self):
+        pass
+```
+
+**Notes**
+
+- `start_handler` and `handle_request_message` run **concurrently** inside an `asyncio.TaskGroup`.
+- Always use `create_response_skeleton(request)` — it handles forwarding chains (when `to` is a list) correctly.
+- Calling `handle_response_message(response)` automatically routes the reply to the correct destination (channel or next agent) based on `response["to"]`.
+
+</details>
+
+---
+
+<details>
 <summary>Design Details (click to expand)</summary>
 
 ### Actors

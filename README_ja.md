@@ -146,6 +146,162 @@ cat log/log-20260301.json | jq -c -r 'select(.type == "trace") | [.time, .messag
 ---
 
 <details>
+<summary>プラグインの書き方</summary>
+
+`plugins/` フォルダに Python ファイルを置き、`Channel` または `Agent` の派生クラスを **1つだけ** 定義します。クラス名は任意ですが、ファイル名（拡張子なし）を `settings.json` の `plugin` フィールドに指定します。
+
+```json
+{
+    "channel": { "my_ch": { "plugin": "my_channel_plugin", "agent": "my_agent", ... } },
+    "agent":   { "my_agent": { "plugin": "my_agent_plugin", ... } }
+}
+```
+
+---
+
+### チャンネルプラグイン（基本）
+
+シンプルなチャンネルの実装例として `plugins/channel_random_talker.py` を参考にしてください。
+
+```python
+from yaclaw.channel import Channel
+
+class MyChannel(Channel):
+
+    async def initialize(self, channel_name, channel_settings):
+        # 初期化処理。self.channel_name / self.channel_settings は
+        # フレームワークが設定済みなのでここで使用できる。
+        # 失敗時は False を返すと起動が中止される。
+        return True
+
+    async def start_listener(self):
+        # 外部からメッセージを受け取るループ処理をここに書く。
+        # 文字列をそのままエージェントへ送る場合:
+        await self.handle_request_message("こんにちは")
+
+        # reply_to などを明示的に指定したい場合:
+        # request = await self.create_request_skeleton()
+        # request["body"] = "こんにちは"
+        # request["reply_to"] = "other_channel"
+        # await self.handle_request_message(request)
+
+    async def handle_response_message(self, response):
+        # エージェントからの返答を受け取る。
+        # response["body"] に返答テキストが入っている。
+        print(response["body"])
+
+    async def stop(self):
+        # シャットダウン時の処理（ループ停止フラグなど）
+        pass
+
+    async def finalize(self):
+        # リソース解放など後始末
+        pass
+```
+
+**ポイント**
+
+- `handle_request_message(msg)` の引数は **文字列** または **辞書（リクエストメッセージ）** のどちらでも可。
+- `create_request_skeleton()` を使うと `from` / `to` / `reply_to` が自動設定された辞書を取得できる。
+- `handle_response_message` はフレームワーク内部のキューによってシリアライズされて呼び出されるため、並行呼び出しを心配する必要はない。
+
+---
+
+### SNSチャンネルプラグイン
+
+Discord のような外部サービスと連携するチャンネルの実装例として `plugins/channel_discord.py` を参考にしてください。
+
+```python
+from yaclaw.channel import Channel
+
+class MySnsBotChannel(Channel):
+
+    async def initialize(self, channel_name, channel_settings):
+        # settings.json から認証情報などを読み取る
+        self.token = channel_settings.get("bot_token", None)
+        if self.token is None:
+            return False   # 必須設定が無ければ False で起動中止
+        # SDKクライアントの生成など
+        self.client = MyBotClient()
+        return True
+
+    async def start_listener(self):
+        # 外部ライブラリの非同期イベントループをここで起動する。
+        # この関数はループが終了するまでブロックし続ける。
+        @self.client.on_message
+        async def on_message(msg):
+            await self.handle_request_message(msg.text)
+
+        await self.client.start(self.token)
+
+    async def handle_response_message(self, response):
+        body = response.get("body", "")
+        if not body:          # 空返答はスキップ
+            return
+        await self.client.send(body)
+
+    async def stop(self):
+        await self.client.close()   # クライアントを適切にクローズする
+
+    async def finalize(self):
+        pass
+```
+
+**ポイント**
+
+- `start_listener` 内で外部ライブラリのイベントループを `await` する。
+- `response["body"]` が空の場合は何もしないなど、堅牢な実装を心がける。
+- `stop` でクライアントを必ずクローズし、`asyncio.TaskGroup` のタスクが正常終了できるようにする。
+
+---
+
+### エージェントプラグイン
+
+エージェントの実装例として `plugins/agent_echo.py` を参考にしてください。
+
+```python
+from yaclaw.agent import Agent
+
+class MyAgent(Agent):
+
+    async def initialize(self, agent_name, agent_settings):
+        # 初期化処理。失敗時は False を返す。
+        return True
+
+    async def start_handler(self):
+        # リクエストキューとは独立して動く処理（外部プロセス起動など）をここに書く。
+        # 単純なエージェントでは何もしなくてよい（すぐ return してよい）。
+        pass
+
+    async def handle_request_message(self, request):
+        # request["body"] にリクエストテキストが入っている。
+        body = request["body"]
+
+        # レスポンスの骨格を作成（from/to/via などが自動設定される）
+        response = await self.create_response_skeleton(request)
+        response["body"] = f"受け取りました: {body}"
+
+        # チャンネル（または次のエージェント）へ返す
+        await self.handle_response_message(response)
+
+    async def stop(self):
+        pass
+
+    async def finalize(self):
+        pass
+```
+
+**ポイント**
+
+- `start_handler` と `handle_request_message` は **並行して** 動作する（`asyncio.TaskGroup`）。
+- `create_response_skeleton(request)` を必ず使うことで、転送チェーン（`to` がリストの場合）が正しく処理される。
+- `handle_response_message(response)` を呼ぶと、`response["to"]` の宛先（チャンネルまたは次のエージェント）へ自動でルーティングされる。
+
+</details>
+
+---
+
+<details>
 <summary>設計詳細（クリックして展開）</summary>
 
 ### アクター
@@ -183,7 +339,7 @@ cat log/log-20260301.json | jq -c -r 'select(.type == "trace") | [.time, .messag
 チャンネル A ---{from: A, to: [X, Y, Z]}---------> エージェント X
 エージェント X ---{from: X, to: [Y, Z], reply_to: A, via: X}---> エージェント Y
 エージェント Y ---{from: Y, to: Z, reply_to: A, via: [X, Y]}---> エージェント Z
-エージェント Z ---{to: A, via: [X,Y,Z]}----------> チャンネル A
+エージェント Z ---{from: Z, to: A, via: [X,Y,Z]}----------> チャンネル A
 ```
 
 </details>
