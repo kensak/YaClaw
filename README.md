@@ -1,4 +1,5 @@
 # YaClaw
+
 ```
     ██╗   ██╗ █████╗ 
     ╚██╗ ██╔╝██╔══██╗
@@ -14,38 +15,79 @@
           ╚═════╝╚══════╝╚═╝  ╚═╝ ╚══╝╚══╝
 ```
 
+[![Python](https://img.shields.io/badge/python-3.13+-blue.svg)](https://www.python.org/)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
+[![Platform](https://img.shields.io/badge/platform-Linux%20%7C%20WSL-lightgrey.svg)](https://learn.microsoft.com/windows/wsl/)
+[![Status](https://img.shields.io/badge/status-experimental-orange.svg)]()
+
 [日本語](README_ja.md)
 
 > **Yet Another 'Claw'-like Tool — Use Your Favorite AI Coding CLI, Through Your Favorite Channel**
->
-> Control your favorite AI CLI tool running in your favorite working folder, remotely through your Discord channel.
 
-YaClaw is a small variant of OpenClaw. It routes messages you send from a Discord channel to an AI coding CLI tool (Codex CLI, Copilot CLI) running in interactive mode, and sends the AI's responses back to the channel.
+**A simple bridge that lets you remotely control an AI coding CLI from Discord.**
 
-The AI coding CLI tool is launched in interactive mode in a specified folder. The same session persists until a restart. Because the tool runs in your usual environment, features like MCP and skills work exactly the same way as they normally would.
+---
 
-Support for new channels (such as Discord) and agents (such as AI coding CLI tools) is enabled through plugins.
+## What does it do?
 
-## Installation
+YaClaw forwards messages you type in Discord directly to Codex CLI or Copilot CLI, then posts the AI's reply back to your channel. Because the agent runs on your own machine, **your full local environment is available — MCP config, file access, shell commands, everything.**
+
+```
+You ──[Discord message]──▶ YaClaw ──▶ Codex CLI / Copilot CLI
+                                        (running on your machine)
+   ◀──[Discord reply]──────────────────────────────────────────
+```
+
+---
+
+## Features
+
+- **Persistent sessions** — the same session stays alive until you restart; no lost context
+- **Your environment, intact** — MCP settings, skills, and your filesystem work exactly as they do locally
+- **Scheduler support** — send prompts to AI on a schedule to automate recurring tasks
+- **Plugin architecture** — add new channels and agents by dropping in a Python file
+- **Lightweight** — one command to launch: `uv run main.py`
+
+---
+
+## Supported Channels & Agents
+
+| Type | Name | Plugin |
+|------|------|--------|
+| Channel | Discord | `channel_discord` |
+| Channel | Scheduler | `channel_schedule` |
+| Agent | GitHub Copilot CLI | `agent_copilot_cli` |
+| Agent | OpenAI Codex CLI | `agent_codex_cli` |
+| Agent | Echo (for testing) | `agent_echo` |
+
+---
+
+## Quick Start
+
+### Prerequisites
+
+- Linux or WSL (Windows native is unsupported — the Python `pty` library doesn't work on Windows)
+- [uv](https://github.com/astral-sh/uv) installed
+- Codex CLI or Copilot CLI installed
+- A Discord bot already created
+
+### Step 1: Clone
 
 ```bash
 git clone https://github.com/kensak/YaClaw.git
+cd YaClaw
 ```
 
-Windows OS is not supported directly because the Python `pty` library does not work on Windows. Please use it through WSL.
-
-## Usage
+### Step 2: Create a `.env` file
 
 ```bash
-cd YaClaw
-uv run main.py
+# .env
+DISCORD_BOT_TOKEN=your_bot_token_here
+DISCORD_CHANNEL_ID=your_channel_id_here
 ```
 
-## Configuration
+### Step 3: Configure `settings.json`
 
-Configuration is done in `settings.json`.
-
-Minimal configuration:
 ```json
 {
     "channel": {
@@ -65,66 +107,102 @@ Minimal configuration:
 }
 ```
 
-Put your Discord bot token and channel ID (created in advance) in a `.env` file at the project root folder.
+> `agent.[name].plugin` is the filename (without extension) of a Python plugin in the `plugins/` folder.
 
-.env
+### Step 4: Launch
+
+```bash
+uv run main.py
 ```
-DISCORD_BOT_TOKEN=xyz...
-DISCORD_CHANNEL_ID=12345...
-```
 
-Set `agent.[agent_name].plugin` to the filename (without extension) of the plugin (Python file) in the `plugins/` folder.
+### Step 5: Test it
 
-* Codex CLI: `agent_codex_cli`
-* Copilot CLI: `agent_copilot_cli`
-* Echo agent for testing: `agent_echo`
+Send a message in your configured Discord channel. If the AI replies, you're good to go!
+
+---
+
+## Configuration Examples
+
+The `examples/` folder contains ready-to-use configurations.
+
+| File | Description |
+|------|-------------|
+| `settings_minimal_codex.json` | Minimal setup for Codex CLI |
+| `settings_minimal_copilot.json` | Minimal setup for Copilot CLI |
+| `settings_schedule.json` | Automated tasks via scheduler |
+| `settings_forward_test.json` | Agent-to-agent forwarding test |
+
+---
 
 ## Logging
 
-Logs are written to `log/log-YYYYMMDD.json`.
+Logs are written to `log/log-YYYYMMDD.json`. Pipe to `jq` for flexible filtering.
 
-You can filter logs flexibly by piping to `jq`.
-
-Example: Show only logs with type `trace`
 ```bash
+# Show only trace-level logs
 cat log/log-20260301.json | jq -c -r 'select(.type == "trace") | [.time, .message] | join(" ")'
 ```
 
-## Design
+---
+
+<details>
+<summary>Design Details (click to expand)</summary>
 
 ### Actors
 
-There are two types of actors — channels and agents — and the model is based on message passing between them.
+There are two actor types — channels and agents — that communicate via message passing.
 
-* **Channel**: Sends requests to an agent and receives responses. Responses are serialized via a queue.
-
-* **Agent**: Returns responses to requests from channels or other agents. Requests are serialized via a queue.
+- **Channel**: Sends requests to an agent and receives responses. Responses are serialized via a queue.
+- **Agent**: Handles requests from channels or other agents and returns responses. Requests are serialized via a queue.
 
 ### Message Routing
 
-Notation like `{from: A, to: X}` represents a message. (Message content is omitted.)
+Notation like `{from: A, to: X}` represents a message (content omitted).
 
 #### Basic Operation
 
-Channel A ---{from: A, to: X}--> Agent X  
-Agent X ---{from: X, to: A, via: X}--> Channel A
+```
+Channel A ---{from: A, to: X}-----------> Agent X
+          <--{from: X, to: A, via: X}---
+```
 
 #### Changing the Reply Destination with `reply_to`
 
-This is useful for implementing, for example, a `schedule` channel that periodically sends prompts to an AI (like a heartbeat).
+Useful for a `schedule` channel that sends periodic prompts to an AI.
 
-Channel A ---{from: A, to: X, reply_to: B}--> Agent X  
-Agent X ---{from: X, to: B, via: X}--> Channel B
+```
+Channel A ---{from: A, to: X, reply_to: B}---> Agent X
+Channel B <--{from: X, to: B, via: X}--------
+```
 
 #### Forwarding
 
-You can pre-specify forwarding destinations when sending a message.
+Pre-specify a forwarding chain when sending a message.
 
-Channel A ---{from: A, to: [X, Y, Z]}--> Agent X  
-Agent X ---{from: X, to: [Y, Z], reply_to: A, via: X}--> Agent Y  
-Agent Y ---{from: Y, to: Z, reply_to: A, via: [X, Y]}--> Agent Z  
-Agent Z ---{from: Z, to: A, via: [X, Y, Z]}--> Channel A
+```
+Channel A  ---{from: A, to: [X, Y, Z]}---------> Agent X
+Agent X    ---{to: [Y, Z], reply_to: A}--------> Agent Y
+Agent Y    ---{to: Z, reply_to: A}-------------> Agent Z
+Agent Z    ---{to: A, via: [X,Y,Z]}------------> Channel A
+```
+
+</details>
+
+---
+
+## Contributing
+
+Bug reports, feature requests, and pull requests are all welcome!
+If you build a plugin for a new channel or agent, feel free to share it.
+
+---
 
 ## Disclaimer
 
-This project is experimental and has had little consideration given to security. Users are responsible for taking their own measures to protect against information leaks from SNS services and communication channels. AI coding CLI tools may behave unexpectedly, including hallucinations. Users are responsible for taking necessary precautions such as protecting data from the tools. The author assumes no liability for any damages arising from the use of this program.
+This project is experimental and has minimal security considerations. You are responsible for protecting against information leaks via external services and communication channels. AI tools may behave unexpectedly, including hallucinations. Take appropriate precautions for your data. The author is not liable for any damages resulting from use of this software.
+
+---
+
+## License
+
+[MIT License](LICENSE)
