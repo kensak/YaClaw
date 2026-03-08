@@ -8,6 +8,7 @@ import traceback
 from yaclaw.channel import ChannelManager
 from yaclaw.agent import AgentManager
 from yaclaw.log import log, close_log
+from yaclaw.util import eval_env_var
 
 async def main():
   return_code = 0
@@ -47,14 +48,22 @@ async def main():
         print(f"{color}{line}{RESET}")
     print("\n")
 
-    with open("settings.json", "r") as file:
-      settings = json.load(file)
+    with open("settings.json", "r", encoding="utf-8") as f:
+      settings_str = f.read()
+    try:
+      settings_str = eval_env_var(settings_str)
+    except Exception as e:
+      msg = f"Error evaluating environment variables in settings.json: {e}"
+      await log("error", msg)
+      print(msg)
+      return 1
+    settings = json.loads(settings_str)
     await log("trace", "Settings loaded.")
 
     if not await ChannelManager.initialize(settings["channel"]):
-      return 1
-    if not await AgentManager.initialize(settings["agent"]):
       return 2
+    if not await AgentManager.initialize(settings["agent"]):
+      return 3
 
     #an_agent = AgentManager.get_agent("main")
     #await an_agent.consume("What has to be broken before you can use it?")
@@ -73,12 +82,16 @@ async def main():
     await log("trace", "KeyboardInterrupt detected. Stopping...")
   except ExceptionGroup as eg:
     return_code = 4
-    await log("error", f"Exceptions occurred in TaskGroup: {eg}")
+    msg = f"Exceptions occurred in TaskGroup: {eg}"
+    await log("error", msg)
+    print(msg)
     error_trace = traceback.format_exc()
     await log("exception_trace", error_trace)
   except Exception as e:
     return_code = 5
-    await log("error", f"An unhandled exception occurred: {e}")
+    msg = f"An unhandled exception occurred: {e}"
+    await log("error", msg)
+    print(msg)
     error_trace = traceback.format_exc()
     await log("exception_trace", error_trace)
   finally:

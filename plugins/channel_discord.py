@@ -6,7 +6,6 @@ from aiohttp.client_exceptions import ClientConnectorDNSError
 sys.path.append('../')
 from yaclaw.channel import Channel
 from yaclaw.log import log
-from yaclaw.util import eval_env_var
 """
 Discord channel plugin for YaClaw.
 
@@ -24,16 +23,28 @@ class ChannelDiscord(Channel):
     # Create the Discord client
     self.client = discord.Client(intents=intents)
     self.require_mention = channel_settings.get("require_mention", False)
+
+    # prepare discord channel ID
+    self.channel_id = self.channel_settings.get("channel_id", None)
+    if self.channel_id is None:
+      msg = f"Channel {self.channel_name}: Discord channel ID not specified in settings. Aborting..."
+      await log("error", msg)
+      print(msg)
+      return False
+
+    # prepare discord bot token
+    self.bot_token = self.channel_settings.get("bot_token", None)
+    if self.bot_token is None:
+      msg = f"Channel {self.channel_name}: Discord bot token not specified in settings. Aborting..."
+      await log("error", msg)
+      print(msg)
+      return False
+    
     await log("trace", f"Discord channel {self.channel_name}: Initialized.")
     return True
 
   async def start_listener(self):
     await log("trace", f"Discord channel {self.channel_name}: Starting listener...")
-
-    # prepare discord channel ID
-    self.channel_id = eval_env_var(self.channel_settings.get("channel_id", "${DISCORD_CHANNEL_ID}"))
-    if self.channel_id is None:
-      raise Exception(f"Discord channel {self.channel_name}: Discord channel ID not specified in settings. Aborting...")
 
     @self.client.event
     async def on_ready():
@@ -51,19 +62,22 @@ class ChannelDiscord(Channel):
       #if message.author.bot:
       #  return
 
-      # If mention is required and the message does not mention the bot itself, ignore the message.
-      if self.require_mention and self.client.user not in message.mentions:
-        return
+      if len(message.mentions) == 0:
+        if self.require_mention:
+          return
+      else:
+        if self.client.user not in message.mentions:
+          return
 
       await self.handle_request_message(message.content)
 
     await log("trace", "Starting Discord client...")
     try:
       # Start the Discord client and connect to Discord servers. This will block until the client is closed.
-      BOT_TOKEN = eval_env_var(self.channel_settings.get("bot_token", "${DISCORD_BOT_TOKEN}"))
-      await self.client.start(BOT_TOKEN)
+      await self.client.start(self.bot_token)
     except ClientConnectorDNSError as e:
-      raise Exception('Cannot look up `discord.com` or `gateway.discord.gg` in DNS. Add entry in /etc/hosts or check your network settings.') from e
+      print(f"Failed to connect to Discord. DNS lookup failed: {e}")
+      raise Exception('Cannot look up `discord.com` or `gateway.discord.gg` in DNS. Check your network settings.') from e
 
   async def handle_response_message(self, response):
     response_body = response.get("body", "")

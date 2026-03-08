@@ -51,7 +51,12 @@ class HandlerImplCodexCli(Agent):
 
   async def start_handler(self):
     # codex resume --last --no-alt-screen --model gpt-5.3-codex --dangerously-bypass-approvals-and-sandbox
-    self.process = pexpect.spawn("codex --model gpt-5.3-codex --dangerously-bypass-approvals-and-sandbox", cwd=self.settings["work_dir"], echo=False, encoding='utf-8')
+    try:
+      self.process = pexpect.spawn("codex --model gpt-5.3-codex --dangerously-bypass-approvals-and-sandbox", cwd=self.settings["work_dir"], echo=False, encoding='utf-8')
+    except pexpect.exceptions.ExceptionPexpect as e:
+      print(f"Failed to start codex-cli process: {e}")
+      raise
+
     await log("codex_cli", f"{self.agent_name}: codex-cli process started with PID: {self.process.pid}")
 
     # 開始のメッセージを読む

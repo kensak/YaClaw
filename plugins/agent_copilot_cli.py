@@ -48,9 +48,12 @@ class HandlerImplCodexCli(Agent):
   async def start_handler(self):
     # https://docs.github.com/en/copilot/reference/cli-command-reference
     # --model gpt-5-mini
-    self.process = pexpect.spawn("copilot --allow-all --model claude-sonnet-4.6 --no-ask-user --no-auto-update --silent", cwd=self.settings["work_dir"], echo=False, encoding='utf-8')
-    if self.process is None:
-      raise Exception("Cannot start copilot-cli process.")
+    try:
+      self.process = pexpect.spawn("copilot --allow-all --model claude-sonnet-4.6 --no-ask-user --no-auto-update --silent", cwd=self.settings["work_dir"], echo=False, encoding='utf-8')
+    except pexpect.exceptions.ExceptionPexpect as e:
+      print(f"Failed to start copilot-cli process: {e}")
+      raise
+
     await log("copilot_cli", f"{self.agent_name}: copilot-cli process started with PID: {self.process.pid}")
 
     # 開始のメッセージを読み捨てる

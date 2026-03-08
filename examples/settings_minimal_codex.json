@@ -4,14 +4,14 @@
             "plugin": "channel_discord",
             "channel_id": "${DISCORD_CHANNEL_ID}",
             "bot_token": "${DISCORD_BOT_TOKEN}",
-            "agent": "copilot",
+            "agent": "codex",
             "require_mention": false
         }
     },
     "agent": {
-        "copilot": {
-            "plugin": "agent_copilot_cli",
-            "work_dir": "workspace/copilot",
+        "codex": {
+            "plugin": "agent_codex_cli",
+            "work_dir": "workspace/codex",
             "default_channel": "discord"
         }
     }

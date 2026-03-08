@@ -5,7 +5,7 @@
             "channel_id": "${DISCORD_CHANNEL_ID}",
             "bot_token": "${DISCORD_BOT_TOKEN}",
             "agent": "copilot",
-            "require_mention": true
+            "require_mention": false
         }
     },
     "agent": {
