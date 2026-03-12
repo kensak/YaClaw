@@ -146,7 +146,7 @@ cat log/log-20260301.json | jq -c -r 'select(.type == "trace") | [.time, .messag
 ---
 
 <details>
-<summary>Writing Plugins</summary>
+<summary>Writing Plugins (click to expand)</summary>
 
 Drop a Python file in the `plugins/` folder and define **exactly one** class that subclasses `Channel` or `Agent`. The class name is arbitrary; the filename (without extension) is what you put in the `plugin` field of `settings.json`.
 

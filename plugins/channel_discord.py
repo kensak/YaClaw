@@ -104,7 +104,10 @@ class ChannelDiscord(Channel):
 
     # Sends the message to the Discord channel.
     # Discord messages have a maximum length of 2000 characters
-    await discord_channel.send(response_body[:2000])
+    while response_body:
+      head = response_body[:2000]
+      await discord_channel.send(head)
+      response_body = response_body[2000:]
 
   async def stop(self):
     await log("trace", f"Discord channel {self.channel_name}: Stopping...")

@@ -4,14 +4,14 @@
             "plugin": "channel_discord",
             "channel_id": "${DISCORD_CHANNEL_ID}",
             "bot_token": "${DISCORD_BOT_TOKEN}",
-            "agent": "copilot",
+            "agent": "gemini",
             "require_mention": false
         }
     },
     "agent": {
-        "copilot": {
-            "plugin": "agent_copilot_cli",
-            "work_dir": "workspace/copilot",
+        "gemini": {
+            "plugin": "agent_gemini_cli",
+            "work_dir": "workspace/gemini",
             "default_channel": "discord"
         }
     }

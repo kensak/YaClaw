@@ -146,7 +146,7 @@ cat log/log-20260301.json | jq -c -r 'select(.type == "trace") | [.time, .messag
 ---
 
 <details>
-<summary>プラグインの書き方</summary>
+<summary>プラグインの書き方（クリックして展開）</summary>
 
 `plugins/` フォルダに Python ファイルを置き、`Channel` または `Agent` の派生クラスを **1つだけ** 定義します。クラス名は任意ですが、ファイル名（拡張子なし）を `settings.json` の `plugin` フィールドに指定します。
 
