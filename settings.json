@@ -4,15 +4,17 @@
             "plugin": "channel_discord",
             "channel_id": "${DISCORD_CHANNEL_ID}",
             "bot_token": "${DISCORD_BOT_TOKEN}",
-            "agent": "gemini",
+            "agent": "opencode",
             "require_mention": false
         }
     },
     "agent": {
-        "gemini": {
-            "plugin": "agent_gemini_cli",
-            "work_dir": "workspace/gemini",
-            "default_channel": "discord"
+        "opencode": {
+            "plugin": "agent_acp",
+            "command": "opencode",
+            "args": ["acp"],
+            "work_dir": "workspace/opencode",
+            "auto_approve": true
         }
     }
 }

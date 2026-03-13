@@ -1,0 +1,9 @@
+{
+  "chat.tools.terminal.autoApprove": {
+    "uv": true,
+    "wsl": true,
+    "~/.local/bin/uv": true,
+    "print(dir(acp))": true,
+    "acp": true
+  }
+}

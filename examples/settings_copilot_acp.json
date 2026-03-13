@@ -1,0 +1,20 @@
+{
+    "channel": {
+        "discord": {
+            "plugin": "channel_discord",
+            "channel_id": "${DISCORD_CHANNEL_ID}",
+            "bot_token": "${DISCORD_BOT_TOKEN}",
+            "agent": "copilot",
+            "require_mention": false
+        }
+    },
+    "agent": {
+        "copilot": {
+            "plugin": "agent_acp",
+            "command": "copilot",
+            "args": ["--acp"],
+            "work_dir": "workspace/copilot",
+            "auto_approve": true
+        }
+    }
+}

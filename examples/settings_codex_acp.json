@@ -1,0 +1,24 @@
+{
+    "_comment": "Requires Node.js. The Zed adapter wraps Codex CLI with ACP support.",
+    "channel": {
+        "discord": {
+            "plugin": "channel_discord",
+            "channel_id": "${DISCORD_CHANNEL_ID}",
+            "bot_token": "${DISCORD_BOT_TOKEN}",
+            "agent": "codex",
+            "require_mention": false
+        }
+    },
+    "agent": {
+        "codex": {
+            "plugin": "agent_acp",
+            "command": "npx",
+            "args": ["-y", "@zed-industries/codex-acp"],
+            "work_dir": "workspace/codex",
+            "auto_approve": true,
+            "env": {
+                "OPENAI_API_KEY": "${OPENAI_API_KEY}"
+            }
+        }
+    }
+}
