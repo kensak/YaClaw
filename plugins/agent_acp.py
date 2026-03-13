@@ -24,6 +24,7 @@ settings.json example:
 
 import asyncio
 import os
+import shutil
 import sys
 from typing import Any
 
@@ -150,6 +151,8 @@ class HandlerACP(Agent):
     async def start_handler(self) -> None:
         """Spawn the ACP subprocess, handshake, and keep it alive."""
         command: str = self.settings["command"]
+        # On Windows, resolve e.g. "opencode" -> "opencode.cmd" automatically
+        command = shutil.which(command) or command
         args: list[str] = self.settings.get("args", [])
         work_dir: str = os.path.abspath(self.settings.get("work_dir", "."))
         extra_env: dict = self.settings.get("env", {})
@@ -190,6 +193,11 @@ class HandlerACP(Agent):
                 await process.wait()
                 await log("acp", f"Agent {self.agent_name}: ACP process exited.")
 
+        except FileNotFoundError:
+            msg = f"Agent {self.agent_name}: command not found: {command}"
+            await log("error", msg)
+            print(msg)
+            raise
         except Exception as e:
             msg = f"Agent {self.agent_name}: failed to start ACP process: {e}"
             await log("error", msg)
