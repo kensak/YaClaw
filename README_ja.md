@@ -24,22 +24,24 @@
 
 > **Yet Another 'Claw'-like Tool — Use Your Favorite AI Coding CLI, Through Your Favorite Channel**
 
-**DiscordからAIコーディングCLIをリモート操作する、シンプルなブリッジツール。**
+**SNSからAIコーディングCLIをリモート操作する、シンプルなブリッジツール。**
 
 > **ACPサポートを追加！** YaClawは [Agent Client Protocol (ACP)](https://agentclientprotocol.com/)（クリーンな JSON-RPC 2.0 stdio トランスポート）を通じてエージェントへ接続するようになりました。ACP が利用可能になったことで、pty を使ったCLI操作に関するコードはすべて `historical` サブフォルダに移動しました。
 
 > 🎉 **Good News!!!** `pty` を使わなくなったため、**YaClaw は Windows でもネイティブに動作するようになりました** — WSL 不要！
 
+>  **Another Good News!!!** YaClaw は **LINE をサポートしました！** AI の友達を追加してみんなに自慢しよう！
+
 ---
 
 ## なにができるの？
 
-YaClawは、Discordに書いたメッセージをそのままCodex CLIやCopilot CLIへ届け、AIの返答をチャンネルに投稿します。AIエージェントはあなたの開発マシン上で動き続けるため、**MCPの設定・ファイルアクセス・コマンド実行などの環境がまるごと使えます**。
+YaClawは、DiscordやLINEに書いたメッセージをそのままCodex CLIやCopilot CLIへ届け、AIの返答をチャンネルに投稿します。AIエージェントはあなたの開発マシン上で動き続けるため、**MCPの設定・ファイルアクセス・コマンド実行などの環境がまるごと使えます**。
 
 ```
-あなた ─[Discordメッセージ]──▶ YaClaw ──▶ エージェント（Copilot / Codex / Gemini / OpenCode / …）
+あなた ─[Discord / LINEメッセージ]──▶ YaClaw ──▶ エージェント（Copilot / Codex / Gemini / OpenCode / …）
                                               （あなたのマシン上で動作）
-      ◀─[Discordへ返信]────────────────────────────────────
+      ◀─[Discord / LINEへ返信]────────────────────────────────────
 ```
 
 ---
@@ -76,7 +78,7 @@ YaClawは、Discordに書いたメッセージをそのままCodex CLIやCopilot
 - Windows、Linux、または macOS
 - [uv](https://github.com/astral-sh/uv) インストール済み
 - ACP対応CLIを少なくとも1つインストール済み（例: `copilot`、`opencode`、`gemini`、`codex`）
-- Discord ボット作成済み
+- Discord / LINE のボット作成済み
 
 ### Step 1: クローン
 
@@ -87,6 +89,7 @@ cd YaClaw
 
 ### Step 2: `.env` ファイルを作成
 
+Discordの場合
 ```bash
 # .env
 DISCORD_BOT_TOKEN=your_bot_token_here

@@ -4,18 +4,6 @@
 
 ---
 
-## 前提条件
-
-LINE Bot SDK v3 をインストールします。
-
-```bash
-uv sync
-# または手動で:
-pip install "line-bot-sdk>=3.0.0"
-```
-
----
-
 ## LINEボットの登録
 
 プラグインを使う前に、LINE Messaging API チャンネルを作成する必要があります。  

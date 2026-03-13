@@ -4,18 +4,6 @@ This plugin connects YaClaw to [LINE Messaging API](https://developers.line.biz/
 
 ---
 
-## Prerequisites
-
-Install the LINE Bot SDK v3:
-
-```bash
-uv sync
-# or manually:
-pip install "line-bot-sdk>=3.0.0"
-```
-
----
-
 ## LINE Bot Registration
 
 Before configuring this plugin, you need a LINE Messaging API channel.
