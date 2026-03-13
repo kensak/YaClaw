@@ -21,16 +21,6 @@ pip install "line-bot-sdk>=3.0.0"
 プラグインを使う前に、LINE Messaging API チャンネルを作成する必要があります。  
 手順は [LINEボットの登録手順.md](LINEボットの登録手順.md) を参照してください。
 
-**概要:**
-
-1. <https://manager.line.biz/> で LINE 公式アカウントを作成
-2. [LINE Developers Console](https://developers.line.biz/console/) でプロバイダーを作成
-3. プロバイダー配下に **Messaging API** チャンネルを作成
-4. **Channel secret** をコピーし、**Channel access token**（長期）を発行
-5. Messaging API 設定で **Webhook の利用** を ON にする
-6. Webhook URL を設定（[HTTPS の設定](#https-の設定) 参照）
-7. LINE Official Account Manager → 応答設定 → **応答メッセージ** を OFF にする
-
 ---
 
 ## settings.json

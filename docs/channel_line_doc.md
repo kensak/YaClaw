@@ -21,16 +21,6 @@ pip install "line-bot-sdk>=3.0.0"
 Before configuring this plugin, you need a LINE Messaging API channel.
 See [LINE_bot_registration.md](LINE_bot_registration.md) for step-by-step instructions.
 
-In summary:
-
-1. Create a LINE Official Account at <https://manager.line.biz/>
-2. Open [LINE Developers Console](https://developers.line.biz/console/) and create a Provider
-3. Create a **Messaging API** channel under that provider
-4. Copy the **Channel secret** and issue a **Channel access token** (long-lived)
-5. Turn **Use webhook** ON in the Messaging API settings
-6. Set the Webhook URL (see [HTTPS setup](#https-setup) below)
-7. Turn off **Auto-reply messages** in LINE Official Account Manager → Response settings
-
 ---
 
 ## settings.json

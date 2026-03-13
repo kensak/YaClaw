@@ -75,6 +75,8 @@ class ChannelLine(Channel):
             return False
 
         self.target_id    = channel_settings.get("target_id",    None)
+        if self.target_id == "null" or self.target_id == "":
+            self.target_id = None
         self.host         = channel_settings.get("host",         "0.0.0.0")
         self.port         = channel_settings.get("port",         8000)
         self.webhook_path = channel_settings.get("webhook_path", "/webhook")
