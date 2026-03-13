@@ -30,15 +30,11 @@ from typing import Any
 import acp
 from acp import (
     PROTOCOL_VERSION,
-    InitializeResponse,
     NewSessionResponse,
-    PromptResponse,
     ReadTextFileResponse,
     RequestPermissionResponse,
     WriteTextFileResponse,
     spawn_agent_process,
-    text_block,
-    update_agent_message,
 )
 from acp.schema import (
     AgentMessageChunk,
@@ -162,6 +158,7 @@ class HandlerACP(Agent):
                 *args,
                 env=env,
                 cwd=work_dir,
+                transport_kwargs={"limit": 4 * 1024 * 1024},  # 4MB: avoid LimitOverrunError on large JSON responses
             ) as (conn, process):
                 self._conn = conn
 
