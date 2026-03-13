@@ -62,6 +62,7 @@ YaClawは、Discordに書いたメッセージをそのままCodex CLIやCopilot
 | 種別 | 名前 | プラグイン |
 |------|------|-----------|
 | チャンネル | Discord | `channel_discord` |
+| チャンネル | LINE | `channel_line` — [設定ガイド](docs/ja/channel_line_doc_ja.md) |
 | チャンネル | スケジューラー | `channel_schedule` |
 | エージェント | ACP対応CLIすべて（Copilot、Codex、Gemini、OpenCode等） | `agent_acp` |
 | エージェント | エコー（テスト用） | `agent_echo` |
@@ -151,6 +152,7 @@ uv run main.py
 | `settings_codex_acp.json` | OpenAI Codex CLI（ACP経由、`@zed-industries/codex-acp` 使用） |
 | `settings_gemini_acp.json` | Google Gemini CLI（ACP経由） |
 | `settings_opencode_acp.json` | OpenCode（ACP経由） |
+| `settings_line.json` | LINE Messaging API チャンネル |
 | `settings_schedule.json` | スケジューラーを使った自動タスク |
 | `settings_forward_test.json` | エージェント間転送のテスト |
 | `historical/` | 旧来の pty ベースプラグイン用レガシー設定 |

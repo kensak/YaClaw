@@ -61,6 +61,7 @@ You ──[Discord message]──▶ YaClaw ──▶ agent (Copilot / Codex / G
 | Type | Name | Plugin |
 |------|------|--------|
 | Channel | Discord | `channel_discord` |
+| Channel | LINE | `channel_line` — [setup guide](docs/channel_line_doc.md) |
 | Channel | Scheduler | `channel_schedule` |
 | Agent | Any ACP-compatible CLI (Copilot, Codex, Gemini, OpenCode, …) | `agent_acp` |
 | Agent | Echo (for testing) | `agent_echo` |
@@ -150,6 +151,7 @@ The `examples/` folder contains ready-to-use configurations.
 | `settings_codex_acp.json` | OpenAI Codex CLI via ACP (using `@zed-industries/codex-acp`) |
 | `settings_gemini_acp.json` | Google Gemini CLI via ACP |
 | `settings_opencode_acp.json` | OpenCode via ACP |
+| `settings_line.json` | LINE Messaging API channel |
 | `settings_schedule.json` | Automated tasks via scheduler |
 | `settings_forward_test.json` | Agent-to-agent forwarding test |
 | `historical/` | Legacy configs for the old pty-based plugins |
