@@ -1,0 +1,24 @@
+{
+    "channel": {
+        "line": {
+            "plugin": "channel_line",
+            "channel_access_token": "${LINE_CHANNEL_ACCESS_TOKEN}",
+            "channel_secret": "${LINE_CHANNEL_SECRET}",
+            "target_id": "${LINE_TARGET_ID}",
+            "host": "0.0.0.0",
+            "port": 8000,
+            "webhook_path": "/webhook",
+            "agent": "opencode"
+        }
+    },
+    "agent": {
+        "opencode": {
+            "plugin": "agent_acp",
+            "command": "opencode",
+            "args": ["acp"],
+            "work_dir": "workspace/opencode",
+            "auto_approve": true,
+            "output_thought": true
+        }
+    }
+}

@@ -8,5 +8,6 @@ dependencies = [
     "agent-client-protocol>=0.8.1",
     "apscheduler>=3.11.2",
     "discord-py>=2.6.4",
+    "line-bot-sdk>=3.0.0",
     "python-dotenv>=1.2.1",
 ]
