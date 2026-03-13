@@ -139,7 +139,7 @@ DISCORD_CHANNEL_ID=your_channel_id_here
 uv run main.py
 ```
 
-### Step 5: Discordで試す
+### Step 5: Discord / LINE で試す
 
 設定したチャンネルにメッセージを送り、AIからの返信が来れば成功です！
 

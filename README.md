@@ -30,15 +30,17 @@
 
 > 🎉 **Good News!!!** Since `pty` is no longer used, **YaClaw now runs natively on Windows** — no WSL required!
 
+>  **Another Good News!!!** YaClaw **now supports LINE!** Add your AI friends and brag to everyone!
+
 ---
 
 ## What does it do?
 
-YaClaw forwards messages you type in Discord directly to Codex CLI or Copilot CLI, then posts the AI's reply back to your channel. Because the agent runs on your own machine, **your full local environment is available — MCP config, file access, shell commands, everything.**
+YaClaw forwards messages you type in Discord / LINE directly to Codex CLI or Copilot CLI, then posts the AI's reply back to your channel. Because the agent runs on your own machine, **your full local environment is available — MCP config, file access, shell commands, everything.**
 
 ```
-You ──[Discord message]──▶ YaClaw ──▶ agent (Copilot / Codex / Gemini / OpenCode / …)
-   ◀──[Discord reply]────────────────────────────────
+You ──[Discord / LINE message]──▶ YaClaw ──▶ agent (Copilot / Codex / Gemini / OpenCode / …)
+   ◀──[Discord / LINE reply]────────────────────────────────
 ```
 
 ---
@@ -75,7 +77,7 @@ You ──[Discord message]──▶ YaClaw ──▶ agent (Copilot / Codex / G
 - Windows, Linux, or macOS
 - [uv](https://github.com/astral-sh/uv) installed
 - At least one ACP-compatible CLI installed (e.g. `copilot`, `opencode`, `gemini`, `codex`)
-- A Discord bot already created
+- A Discord / LINE bot already created
 
 ### Step 1: Clone
 
@@ -86,6 +88,7 @@ cd YaClaw
 
 ### Step 2: Create a `.env` file
 
+In case of Discord:
 ```bash
 # .env
 DISCORD_BOT_TOKEN=your_bot_token_here
@@ -137,7 +140,7 @@ uv run main.py
 
 ### Step 5: Test it
 
-Send a message in your configured Discord channel. If the AI replies, you're good to go!
+Send a message in your configured Discord / LINE channel. If the AI replies, you're good to go!
 
 ---
 
