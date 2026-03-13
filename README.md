@@ -26,6 +26,8 @@
 
 **A simple bridge that lets you remotely control an AI coding CLI from Discord.**
 
+> **ACP support added!** YaClaw now connects to agents via the [Agent Client Protocol (ACP)](https://agentclientprotocol.com/) — a clean JSON-RPC 2.0 stdio transport — instead of driving CLIs over a pty. Now that ACP is available, all the `pty` craftworks are moved to the `historical` subfolder.
+
 ---
 
 ## What does it do?
@@ -33,16 +35,18 @@
 YaClaw forwards messages you type in Discord directly to Codex CLI or Copilot CLI, then posts the AI's reply back to your channel. Because the agent runs on your own machine, **your full local environment is available — MCP config, file access, shell commands, everything.**
 
 ```
-You ──[Discord message]──▶ YaClaw ──▶ Codex CLI / Copilot CLI
-                                        (running on your machine)
-   ◀──[Discord reply]──────────────────────────────────────────
+You ──[Discord message]──▶ YaClaw ──▶ agent (Copilot / Codex / Gemini / OpenCode / …)
+   ◀──[Discord reply]────────────────────────────────
 ```
 
 ---
 
 ## Features
 
+- **ACP-based integration** — connects to any ACP-compatible CLI agent (Copilot, Codex, Gemini, OpenCode, …) via clean stdio JSON-RPC 2.0; no pty hacks
 - **Persistent sessions** — the same session stays alive until you restart; no lost context
+- **Session continuation** — optionally resume the last session on startup (`-c`, `--continue`, `-r latest`)
+- **Thought output control** — enable/disable streaming of agent thought chunks per agent (`output_thought`)
 - **Your environment, intact** — MCP settings, skills, and your filesystem work exactly as they do locally
 - **Scheduler support** — send prompts to AI on a schedule to automate recurring tasks
 - **Plugin architecture** — add new channels and agents by dropping in a Python file
@@ -56,8 +60,7 @@ You ──[Discord message]──▶ YaClaw ──▶ Codex CLI / Copilot CLI
 |------|------|--------|
 | Channel | Discord | `channel_discord` |
 | Channel | Scheduler | `channel_schedule` |
-| Agent | GitHub Copilot CLI | `agent_copilot_cli` |
-| Agent | OpenAI Codex CLI | `agent_codex_cli` |
+| Agent | Any ACP-compatible CLI (Copilot, Codex, Gemini, OpenCode, …) | `agent_acp` |
 | Agent | Echo (for testing) | `agent_echo` |
 
 ---
@@ -66,9 +69,9 @@ You ──[Discord message]──▶ YaClaw ──▶ Codex CLI / Copilot CLI
 
 ### Prerequisites
 
-- Linux or WSL (Windows native is unsupported — the Python `pty` library doesn't work on Windows)
+- Linux or WSL
 - [uv](https://github.com/astral-sh/uv) installed
-- Codex CLI or Copilot CLI installed
+- At least one ACP-compatible CLI installed (e.g. `copilot`, `opencode`, `gemini`, `codex`)
 - A Discord bot already created
 
 ### Step 1: Clone
@@ -95,19 +98,33 @@ DISCORD_CHANNEL_ID=your_channel_id_here
             "plugin": "channel_discord",
             "channel_id": "${DISCORD_CHANNEL_ID}",
             "bot_token": "${DISCORD_BOT_TOKEN}",
-            "agent": "codex"
+            "agent": "opencode",
+            "require_mention": false
         }
     },
     "agent": {
-        "codex": {
-            "plugin": "agent_codex_cli",
-            "work_dir": "workspace/codex"
+        "opencode": {
+            "plugin": "agent_acp",
+            "command": "opencode",
+            "args": ["acp", "-c"],
+            "work_dir": "workspace/opencode",
+            "auto_approve": true,
+            "output_thought": false
         }
     }
 }
 ```
 
 > `agent.[name].plugin` is the filename (without extension) of a Python plugin in the `plugins/` folder.
+>
+> **Key `agent_acp` settings:**
+> | Key | Description |
+> |-----|-------------|
+> | `command` | The CLI executable to launch |
+> | `args` | Arguments passed to the CLI (include the ACP flag here, and optionally a session-resume flag) |
+> | `work_dir` | Working directory for the agent process |
+> | `auto_approve` | Auto-approve all tool-use permission requests (`true` for unattended use) |
+> | `output_thought` | Send agent thought chunks as a separate `💭 …` message (`false` by default) |
 
 ### Step 4: Launch
 
@@ -127,10 +144,13 @@ The `examples/` folder contains ready-to-use configurations.
 
 | File | Description |
 |------|-------------|
-| `settings_minimal_codex.json` | Minimal setup for Codex CLI |
-| `settings_minimal_copilot.json` | Minimal setup for Copilot CLI |
+| `settings_copilot_acp.json` | GitHub Copilot CLI via ACP |
+| `settings_codex_acp.json` | OpenAI Codex CLI via ACP (using `@zed-industries/codex-acp`) |
+| `settings_gemini_acp.json` | Google Gemini CLI via ACP |
+| `settings_opencode_acp.json` | OpenCode via ACP |
 | `settings_schedule.json` | Automated tasks via scheduler |
 | `settings_forward_test.json` | Agent-to-agent forwarding test |
+| `historical/` | Legacy configs for the old pty-based plugins |
 
 ---
 

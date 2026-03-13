@@ -26,6 +26,8 @@
 
 **DiscordからAIコーディングCLIをリモート操作する、シンプルなブリッジツール。**
 
+> **ACPサポートを追加！** YaClawは [Agent Client Protocol (ACP)](https://agentclientprotocol.com/)（クリーンな JSON-RPC 2.0 stdio トランスポート）を通じてエージェントへ接続するようになりました。ACP が利用可能になったことで、pty を使ったCLI操作に関するコードはすべて `historical` サブフォルダに移動しました。
+
 ---
 
 ## なにができるの？
@@ -33,16 +35,19 @@
 YaClawは、Discordに書いたメッセージをそのままCodex CLIやCopilot CLIへ届け、AIの返答をチャンネルに投稿します。AIエージェントはあなたの開発マシン上で動き続けるため、**MCPの設定・ファイルアクセス・コマンド実行などの環境がまるごと使えます**。
 
 ```
-あなた ─[Discordメッセージ]──▶ YaClaw ──▶ Codex CLI / Copilot CLI
+あなた ─[Discordメッセージ]──▶ YaClaw ──▶ エージェント（Copilot / Codex / Gemini / OpenCode / …）
                                               （あなたのマシン上で動作）
-      ◀─[Discordへ返信]────────────────────────────────────────────
+      ◀─[Discordへ返信]────────────────────────────────────
 ```
 
 ---
 
 ## 特徴
 
+- **ACP対応** — ACP対応のCLIエージェント（Copilot、Codex、Gemini、OpenCode等）へ stdio JSON-RPC 2.0 で接続。pty ハックは不要
 - **セッション持続** — 再起動しない限り同じセッションが継続。会話の文脈が失われません
+- **セッション再開** — 起動時に前回セッションを任意で再開（`-c`、`--continue`、`-r latest`）
+- **思考出力制御** — エージェントごとに思考チャンクのストリーミングを有効/無効化（`output_thought`）
 - **環境そのまま** — MCP設定・スキル・ファイルシステムなど、ローカル環境を完全に活用
 - **スケジューラー対応** — 定期的にAIへプロンプトを送り、自動タスクを実行
 - **プラグイン拡張** — チャンネルもエージェントもPythonプラグインで自由に追加
@@ -56,8 +61,7 @@ YaClawは、Discordに書いたメッセージをそのままCodex CLIやCopilot
 |------|------|-----------|
 | チャンネル | Discord | `channel_discord` |
 | チャンネル | スケジューラー | `channel_schedule` |
-| エージェント | GitHub Copilot CLI | `agent_copilot_cli` |
-| エージェント | OpenAI Codex CLI | `agent_codex_cli` |
+| エージェント | ACP対応CLIすべて（Copilot、Codex、Gemini、OpenCode等） | `agent_acp` |
 | エージェント | エコー（テスト用） | `agent_echo` |
 
 ---
@@ -66,9 +70,9 @@ YaClawは、Discordに書いたメッセージをそのままCodex CLIやCopilot
 
 ### 前提
 
-- Linux / WSL 環境（Windowsネイティブは `pty` 非対応のため不可）
+- Linux / WSL 環境
 - [uv](https://github.com/astral-sh/uv) インストール済み
-- Codex CLI または Copilot CLI インストール済み
+- ACP対応CLIを少なくとも1つインストール済み（例: `copilot`、`opencode`、`gemini`、`codex`）
 - Discord ボット作成済み
 
 ### Step 1: クローン
@@ -95,19 +99,33 @@ DISCORD_CHANNEL_ID=your_channel_id_here
             "plugin": "channel_discord",
             "channel_id": "${DISCORD_CHANNEL_ID}",
             "bot_token": "${DISCORD_BOT_TOKEN}",
-            "agent": "codex"
+            "agent": "opencode",
+            "require_mention": false
         }
     },
     "agent": {
-        "codex": {
-            "plugin": "agent_codex_cli",
-            "work_dir": "workspace/codex"
+        "opencode": {
+            "plugin": "agent_acp",
+            "command": "opencode",
+            "args": ["acp", "-c"],
+            "work_dir": "workspace/opencode",
+            "auto_approve": true,
+            "output_thought": false
         }
     }
 }
 ```
 
 > `agent.[name].plugin` の値は `plugins/` フォルダー内のPythonファイル名（拡張子なし）です。
+>
+> **`agent_acp` の主な設定キー:**
+> | キー | 説明 |
+> |-----|------|
+> | `command` | 起動するCLI実行ファイル |
+> | `args` | CLIへ渡す引数（ACPフラグやセッション再開フラグをここに指定） |
+> | `work_dir` | エージェントプロセスの作業ディレクトリ |
+> | `auto_approve` | すべてのツール使用許可リクエストを自動承認（無人利用時は `true`） |
+> | `output_thought` | エージェントの思考チャンクを `💭 …` メッセージとして送信（デフォルト `false`） |
 
 ### Step 4: 起動
 
@@ -127,10 +145,13 @@ uv run main.py
 
 | ファイル | 内容 |
 |----------|------|
-| `settings_minimal_codex.json` | Codex CLIの最小構成 |
-| `settings_minimal_copilot.json` | Copilot CLIの最小構成 |
+| `settings_copilot_acp.json` | GitHub Copilot CLI（ACP経由） |
+| `settings_codex_acp.json` | OpenAI Codex CLI（ACP経由、`@zed-industries/codex-acp` 使用） |
+| `settings_gemini_acp.json` | Google Gemini CLI（ACP経由） |
+| `settings_opencode_acp.json` | OpenCode（ACP経由） |
 | `settings_schedule.json` | スケジューラーを使った自動タスク |
 | `settings_forward_test.json` | エージェント間転送のテスト |
+| `historical/` | 旧来の pty ベースプラグイン用レガシー設定 |
 
 ---
 
