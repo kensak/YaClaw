@@ -17,7 +17,7 @@
 
 [![Python](https://img.shields.io/badge/python-3.13+-blue.svg)](https://www.python.org/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
-[![Platform](https://img.shields.io/badge/platform-Linux%20%7C%20WSL-lightgrey.svg)](https://learn.microsoft.com/windows/wsl/)
+[![Platform](https://img.shields.io/badge/platform-Windows%20%7C%20Linux%20%7C%20macOS-lightgrey.svg)]()
 [![Status](https://img.shields.io/badge/status-experimental-orange.svg)]()
 
 [English](README.md)
@@ -27,6 +27,8 @@
 **DiscordからAIコーディングCLIをリモート操作する、シンプルなブリッジツール。**
 
 > **ACPサポートを追加！** YaClawは [Agent Client Protocol (ACP)](https://agentclientprotocol.com/)（クリーンな JSON-RPC 2.0 stdio トランスポート）を通じてエージェントへ接続するようになりました。ACP が利用可能になったことで、pty を使ったCLI操作に関するコードはすべて `historical` サブフォルダに移動しました。
+
+> 🎉 **Good News!!!** `pty` を使わなくなったため、**YaClaw は Windows でもネイティブに動作するようになりました** — WSL 不要！
 
 ---
 
@@ -70,7 +72,7 @@ YaClawは、Discordに書いたメッセージをそのままCodex CLIやCopilot
 
 ### 前提
 
-- Linux / WSL 環境
+- Windows、Linux、または macOS
 - [uv](https://github.com/astral-sh/uv) インストール済み
 - ACP対応CLIを少なくとも1つインストール済み（例: `copilot`、`opencode`、`gemini`、`codex`）
 - Discord ボット作成済み

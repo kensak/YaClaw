@@ -17,7 +17,7 @@
 
 [![Python](https://img.shields.io/badge/python-3.13+-blue.svg)](https://www.python.org/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
-[![Platform](https://img.shields.io/badge/platform-Linux%20%7C%20WSL-lightgrey.svg)](https://learn.microsoft.com/windows/wsl/)
+[![Platform](https://img.shields.io/badge/platform-Windows%20%7C%20Linux%20%7C%20macOS-lightgrey.svg)]()
 [![Status](https://img.shields.io/badge/status-experimental-orange.svg)]()
 
 [日本語](README_ja.md)
@@ -27,6 +27,8 @@
 **A simple bridge that lets you remotely control an AI coding CLI from Discord.**
 
 > **ACP support added!** YaClaw now connects to agents via the [Agent Client Protocol (ACP)](https://agentclientprotocol.com/) — a clean JSON-RPC 2.0 stdio transport — instead of driving CLIs over a pty. Now that ACP is available, all the `pty` craftworks are moved to the `historical` subfolder.
+
+> 🎉 **Good News!!!** Since `pty` is no longer used, **YaClaw now runs natively on Windows** — no WSL required!
 
 ---
 
@@ -69,7 +71,7 @@ You ──[Discord message]──▶ YaClaw ──▶ agent (Copilot / Codex / G
 
 ### Prerequisites
 
-- Linux or WSL
+- Windows, Linux, or macOS
 - [uv](https://github.com/astral-sh/uv) installed
 - At least one ACP-compatible CLI installed (e.g. `copilot`, `opencode`, `gemini`, `codex`)
 - A Discord bot already created
