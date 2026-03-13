@@ -55,19 +55,25 @@ class _ACPClient:
     from the remote ACP agent.
     """
 
-    def __init__(self, auto_approve: bool, work_dir: str):
+    def __init__(self, auto_approve: bool, work_dir: str, output_thought: bool = False):
         self._auto_approve = auto_approve
         self._work_dir = work_dir
+        self._output_thought = output_thought
         self.chunks: list[str] = []
+        self.thought_chunks: list[str] = []
 
     # ------------------------------------------------------------------
     # session/update — streaming content from the agent
     # ------------------------------------------------------------------
     async def session_update(self, session_id: str, update: Any, **kwargs: Any) -> None:
-        if isinstance(update, (AgentMessageChunk, AgentThoughtChunk)):
+        if isinstance(update, AgentMessageChunk):
             content = update.content
             if hasattr(content, "text"):
                 self.chunks.append(content.text)
+        elif isinstance(update, AgentThoughtChunk):
+            content = update.content
+            if hasattr(content, "text"):
+                self.thought_chunks.append(content.text)
 
     # ------------------------------------------------------------------
     # session/request_permission — tool execution approval
@@ -133,6 +139,7 @@ class HandlerACP(Agent):
         self._client = _ACPClient(
             auto_approve=agent_settings.get("auto_approve", False),
             work_dir=os.path.abspath(agent_settings.get("work_dir", ".")),
+            output_thought=agent_settings.get("output_thought", False),
         )
         self._conn = None
         self._session_id: str | None = None
@@ -209,6 +216,7 @@ class HandlerACP(Agent):
         # Only one prompt at a time per session
         async with self._prompt_lock:
             self._client.chunks.clear()
+            self._client.thought_chunks.clear()
 
             # Send typing indicators while waiting for the agent
             self._prompt_done = False
@@ -226,6 +234,12 @@ class HandlerACP(Agent):
                     await typing_task
                 except asyncio.CancelledError:
                     pass
+
+            if self._client._output_thought and self._client.thought_chunks:
+                thought_text = "💭 " + "".join(self._client.thought_chunks).strip()
+                thought_msg = await self.create_response_skeleton(request)
+                thought_msg["body"] = thought_text
+                await self.handle_response_message(thought_msg)
 
             result = "".join(self._client.chunks).strip()
             await log("acp", f"Agent {self.agent_name}: response: {result[:200]}...")

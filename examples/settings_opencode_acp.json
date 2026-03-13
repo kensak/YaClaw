@@ -14,7 +14,8 @@
             "command": "opencode",
             "args": ["acp", "-c"],
             "work_dir": "workspace/opencode",
-            "auto_approve": true
+            "auto_approve": true,
+            "output_thought": false
         }
     }
 }

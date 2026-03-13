@@ -14,7 +14,8 @@
             "command": "copilot",
             "args": ["--acp", "--continue"],
             "work_dir": "workspace/copilot",
-            "auto_approve": true
+            "auto_approve": true,
+            "output_thought": false
         }
     }
 }

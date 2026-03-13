@@ -14,7 +14,8 @@
             "command": "gemini",
             "args": ["--experimental-acp", "-r", "latest"],
             "work_dir": "workspace/gemini",
-            "auto_approve": true
+            "auto_approve": true,
+            "output_thought": false
         }
     }
 }
