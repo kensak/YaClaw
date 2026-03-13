@@ -12,7 +12,7 @@
         "opencode": {
             "plugin": "agent_acp",
             "command": "opencode",
-            "args": ["acp"],
+            "args": ["acp", "-c"],
             "work_dir": "workspace/opencode",
             "auto_approve": true
         }

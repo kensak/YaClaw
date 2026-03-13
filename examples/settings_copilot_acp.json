@@ -12,7 +12,7 @@
         "copilot": {
             "plugin": "agent_acp",
             "command": "copilot",
-            "args": ["--acp"],
+            "args": ["--acp", "--continue"],
             "work_dir": "workspace/copilot",
             "auto_approve": true
         }
