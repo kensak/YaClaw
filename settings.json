@@ -1,21 +1,18 @@
 {
     "channel": {
-        "line": {
-            "plugin": "channel_line",
-            "channel_access_token": "${LINE_CHANNEL_ACCESS_TOKEN}",
-            "channel_secret": "${LINE_CHANNEL_SECRET}",
-            "target_id": "${LINE_TARGET_ID}",
-            "host": "127.0.0.1",
-            "port": 8000,
-            "webhook_path": "/webhook",
-            "agent": "opencode"
+        "discord": {
+            "plugin": "channel_discord",
+            "channel_id": "${DISCORD_CHANNEL_ID}",
+            "bot_token": "${DISCORD_BOT_TOKEN}",
+            "agent": "opencode",
+            "require_mention": false
         }
     },
     "agent": {
         "opencode": {
             "plugin": "agent_acp",
             "command": "opencode",
-            "args": ["acp"],
+            "args": ["acp", "-c"],
             "work_dir": "workspace/opencode",
             "auto_approve": true,
             "output_thought": false

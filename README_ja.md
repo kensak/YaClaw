@@ -30,7 +30,7 @@
 
 > 🎉 **Good News!!!** `pty` を使わなくなったため、**YaClaw は Windows でもネイティブに動作するようになりました** — WSL 不要！
 
->  **Another Good News!!!** YaClaw は **LINE をサポートしました！** AI の友達を追加してみんなに自慢しよう！
+>  **Another Good News!!!** YaClaw は **LINE をサポートしました！** いつでもどこでもあなたの AI と会話ができます。
 
 ---
 

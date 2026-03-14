@@ -30,7 +30,7 @@
 
 > 🎉 **Good News!!!** Since `pty` is no longer used, **YaClaw now runs natively on Windows** — no WSL required!
 
->  **Another Good News!!!** YaClaw **now supports LINE!** Add your AI friends and brag to everyone!
+>  **Another Good News!!!** YaClaw **now supports LINE!** Drop a LINE to your AI — anytime, anywhere.
 
 ---
 
