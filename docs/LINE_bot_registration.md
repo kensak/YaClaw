@@ -53,6 +53,7 @@ A LINE bot is created using a **LINE Business Account + Messaging API**.
 6. **Set the Webhook URL**
 
     On the same **Messaging API** tab, click **Edit** next to **Webhook URL** and enter your URL.  
+    (The domain of the URL must be registered in the DNS at this point.)
     Example: `https://xyz.tail123abc.ts.net/webhook`
     Then turn **Use webhook** ON.
 
@@ -62,7 +63,7 @@ A LINE bot is created using a **LINE Business Account + Messaging API**.
 
     - `CHANNEL_SECRET`
     - `CHANNEL_ACCESS_TOKEN`
-    
+
     Once the server is running, messages are processed in this flow:
 
     ```
