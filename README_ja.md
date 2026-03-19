@@ -323,7 +323,7 @@ class MyAgent(Agent):
 
 - `start_handler` と `handle_request_message` は **並行して** 動作する（`asyncio.TaskGroup`）。
 - `create_response_skeleton(request)` を必ず使うことで、転送チェーン（`to` がリストの場合）が正しく処理される。
-- `handle_response_message(response)` を呼ぶと、`response["to"]` の宛先（チャンネルまたは次のエージェント）へ自動でルーティングされる。
+- `handle_response_message(response)` を呼ぶと、`response["to_"]` の宛先（チャンネルまたは次のエージェント）へ自動でルーティングされる。
 
 </details>
 

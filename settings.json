@@ -1,21 +1,23 @@
 {
     "channel": {
-        "discord": {
-            "plugin": "channel_discord",
-            "channel_id": "${DISCORD_CHANNEL_ID}",
-            "bot_token": "${DISCORD_BOT_TOKEN}",
-            "agent": "opencode",
-            "require_mention": false
+        "random_talker1": {
+            "plugin": "channel_random_talker",
+            "agent": ["echo1", "echo2", "echo3"]
+        },
+        "random_talker2": {
+            "plugin": "channel_random_talker",
+            "agent": ["echo3", "echo2", "echo1"]
         }
     },
     "agent": {
-        "opencode": {
-            "plugin": "agent_acp",
-            "command": "opencode",
-            "args": ["acp", "-c"],
-            "work_dir": "workspace/opencode",
-            "auto_approve": true,
-            "output_thought": false
+        "echo1": {
+            "plugin": "agent_echo"
+        },
+        "echo2": {
+            "plugin": "agent_echo"
+        },
+        "echo3": {
+            "plugin": "agent_echo"
         }
     }
 }

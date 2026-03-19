@@ -321,7 +321,7 @@ class MyAgent(Agent):
 
 - `start_handler` and `handle_request_message` run **concurrently** inside an `asyncio.TaskGroup`.
 - Always use `create_response_skeleton(request)` — it handles forwarding chains (when `to` is a list) correctly.
-- Calling `handle_response_message(response)` automatically routes the reply to the correct destination (channel or next agent) based on `response["to"]`.
+- Calling `handle_response_message(response)` automatically routes the reply to the correct destination (channel or next agent) based on `response["to_"]`.
 
 </details>
 

@@ -759,6 +759,7 @@ dependencies = [
     { name = "apscheduler" },
     { name = "discord-py" },
     { name = "line-bot-sdk" },
+    { name = "pydantic" },
     { name = "python-dotenv" },
 ]
 
@@ -768,6 +769,7 @@ requires-dist = [
     { name = "apscheduler", specifier = ">=3.11.2" },
     { name = "discord-py", specifier = ">=2.6.4" },
     { name = "line-bot-sdk", specifier = ">=3.0.0" },
+    { name = "pydantic", specifier = ">=2.12.5" },
     { name = "python-dotenv", specifier = ">=1.2.1" },
 ]
 
