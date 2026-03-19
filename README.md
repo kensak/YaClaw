@@ -18,7 +18,6 @@
 [![Python](https://img.shields.io/badge/python-3.13+-blue.svg)](https://www.python.org/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 [![Platform](https://img.shields.io/badge/platform-Windows%20%7C%20Linux%20%7C%20macOS-lightgrey.svg)]()
-[![Status](https://img.shields.io/badge/status-experimental-orange.svg)]()
 
 [日本語](README_ja.md)
 
@@ -381,7 +380,7 @@ If you build a plugin for a new channel or agent, feel free to share it.
 
 ## Disclaimer
 
-This project is experimental and has minimal security considerations. You are responsible for protecting against information leaks via external services and communication channels. AI tools may behave unexpectedly, including hallucinations. Take appropriate precautions for your data. The author is not liable for any damages resulting from use of this software.
+You are responsible for protecting against information leaks via external services and communication channels. AI tools may behave unexpectedly, including hallucinations. Take appropriate precautions for your data. The author is not liable for any damages resulting from use of this software.
 
 ---
 

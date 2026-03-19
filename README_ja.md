@@ -18,7 +18,6 @@
 [![Python](https://img.shields.io/badge/python-3.13+-blue.svg)](https://www.python.org/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 [![Platform](https://img.shields.io/badge/platform-Windows%20%7C%20Linux%20%7C%20macOS-lightgrey.svg)]()
-[![Status](https://img.shields.io/badge/status-experimental-orange.svg)]()
 
 [English](README.md)
 
@@ -383,7 +382,7 @@ class MyAgent(Agent):
 
 ## 免責事項
 
-本プロジェクトは実験的であり、セキュリティ対策は最小限です。情報漏洩・AIの予期しない動作（ハルシネーション等）に対する対策は利用者自身の責任で行ってください。本プログラムの利用により生じた損害について作者は一切の責任を負いません。
+情報漏洩・AIの予期しない動作（ハルシネーション等）に対する対策は利用者自身の責任で行ってください。本プログラムの利用により生じた損害について作者は一切の責任を負いません。
 
 ---
 
