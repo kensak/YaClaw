@@ -1,0 +1,16 @@
+{
+    "logging": {
+        "suppress_types": ["trace"]
+    },
+    "channel": {
+        "terminal": {
+            "plugin": "channel_terminal",
+            "agent": "echo"
+        }
+    },
+    "agent": {
+        "echo": {
+            "plugin": "agent_echo"
+        }
+    }
+}

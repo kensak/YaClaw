@@ -76,9 +76,7 @@ async def main():
         if not await AgentManager.initialize(settings["agent"]):
             return 3
 
-        # an_agent = AgentManager.get_agent("main")
-        # await an_agent.consume("What has to be broken before you can use it?")
-        # await an_agent.consume("What has a head and a tail, but no body?")
+        print("Type Ctrl+C to stop.")
 
         # Start channels and agents.
         # This will run until completion or cancellation.
