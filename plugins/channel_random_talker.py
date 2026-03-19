@@ -42,7 +42,7 @@ class ChannelRandomTalker(Channel):
             },
         }
         await log(
-            "channel_message_dump",
+            "channel_random_talker_dump",
             f"Channel {self.channel_name}: ACP initialize request: {body}",
         )
         await self.handle_request_message(body)
@@ -56,7 +56,7 @@ class ChannelRandomTalker(Channel):
             "params": {"cwd": "/", "mcpServers": []},
         }
         await log(
-            "channel_message_dump",
+            "channel_random_talker_dump",
             f"Channel {self.channel_name}: New session request: {body}",
         )
         await self.handle_request_message(body)
@@ -87,7 +87,7 @@ class ChannelRandomTalker(Channel):
                 }
             print(f"{self.channel_name} request ID {self.num_method_calls}: {message}")
             await log(
-                "channel_message_dump",
+                "channel_random_talker_dump",
                 f"Channel {self.channel_name}: User message request: {body}",
             )
             await self.handle_request_message(body)
@@ -95,7 +95,7 @@ class ChannelRandomTalker(Channel):
     async def handle_response_message(self, response):
         body = response.get("body", None)
         await log(
-            "channel_message_dump",
+            "channel_random_talker_dump",
             f"Channel {self.channel_name}: Received response: {body}",
         )
         id_ = body.get("id", None)
@@ -114,7 +114,9 @@ class ChannelRandomTalker(Channel):
             update = params.get("update", {})
             content = update.get("content", {})
             text = content.get("text", "")
-            print(f"{self.channel_name} update: {text}")
+            msg = f"{self.channel_name} update: {text}"
+            await log("channel_random_talker", msg)
+            print(msg)
         else:
             result = body.get("result", {})
             stop_reason = result.get("stopReason", "")

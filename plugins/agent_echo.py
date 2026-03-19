@@ -24,7 +24,7 @@ class HandlerEcho(Agent):
     async def handle_request_message(self, request):
         body = request["body"]
         await log(
-            "agent_message_dump",
+            "agent_echo_dump",
             f"Agent {self.agent_name}: Received request: {body}",
         )
 
@@ -42,7 +42,7 @@ class HandlerEcho(Agent):
             forwarding = await self.create_response_skeleton(request)
             forwarding["body"] = forwarding_body
             await log(
-                "agent_message_dump",
+                "agent_echo_dump",
                 f"Agent {self.agent_name}: Forwarding message: {forwarding_body}",
             )
             await self.handle_response_message(forwarding)
@@ -103,7 +103,7 @@ class HandlerEcho(Agent):
             }
             response["body"] = resp_body
             await log(
-                "agent_message_dump",
+                "agent_echo_dump",
                 f"Agent {self.agent_name}: Sending update: {resp_body}",
             )
             await self.handle_response_message(response)
@@ -126,7 +126,7 @@ class HandlerEcho(Agent):
             }
         response["body"] = resp_body
         await log(
-            "agent_message_dump",
+            "agent_echo_dump",
             f"Agent {self.agent_name}: Sending response: {resp_body}",
         )
         await self.handle_response_message(response)

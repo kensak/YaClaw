@@ -1,4 +1,7 @@
 {
+    "logging": {
+        "suppress_types": ["trace", ".*dump"]
+    },
     "channel": {
         "random_talker1": {
             "plugin": "channel_random_talker",
