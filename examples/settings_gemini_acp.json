@@ -13,9 +13,7 @@
             "plugin": "agent_acp",
             "command": "gemini",
             "args": ["--experimental-acp", "-r", "latest"],
-            "work_dir": "workspace/gemini",
-            "auto_approve": true,
-            "output_thought": false
+            "work_dir": "workspace/gemini"
         }
     }
 }

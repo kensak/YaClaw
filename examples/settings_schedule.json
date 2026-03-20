@@ -29,9 +29,7 @@
             "plugin": "agent_acp",
             "command": "opencode",
             "args": ["acp", "-c"],
-            "work_dir": "workspace/opencode",
-            "auto_approve": true,
-            "output_thought": false
+            "work_dir": "workspace/opencode"
         }
     }
 }

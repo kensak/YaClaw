@@ -69,12 +69,13 @@ async def main():
         settings = json.loads(settings_str)
         await log("trace", "Settings loaded.")
 
-        initialize_log(settings.get("logging", {}).get("suppress_types", []))
+        if not initialize_log(settings.get("logging", {}).get("suppress_types", [])):
+            return 2
 
         if not await ChannelManager.initialize(settings["channel"]):
-            return 2
-        if not await AgentManager.initialize(settings["agent"]):
             return 3
+        if not await AgentManager.initialize(settings["agent"]):
+            return 4
 
         print("Type Ctrl+C to stop.")
 
@@ -90,14 +91,14 @@ async def main():
     except KeyboardInterrupt:
         await log("trace", "KeyboardInterrupt detected. Stopping...")
     except ExceptionGroup as eg:
-        return_code = 4
+        return_code = 5
         msg = f"Exceptions occurred in TaskGroup: {eg}"
         await log("error", msg)
         print(msg)
         error_trace = traceback.format_exc()
         await log("exception_trace", error_trace)
     except Exception as e:
-        return_code = 5
+        return_code = 6
         msg = f"An unhandled exception occurred: {e}"
         await log("error", msg)
         print(msg)

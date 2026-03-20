@@ -13,9 +13,7 @@
             "plugin": "agent_acp",
             "command": "copilot",
             "args": ["--acp", "--continue"],
-            "work_dir": "workspace/copilot",
-            "auto_approve": true,
-            "output_thought": false
+            "work_dir": "workspace/copilot"
         }
     }
 }

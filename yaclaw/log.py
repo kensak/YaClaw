@@ -1,18 +1,25 @@
-from datetime import datetime
-import asyncio
-import json
+import os
 import re
+import json
+import asyncio
+from datetime import datetime
 
 current_date_str = ""
 f = None
 lock = asyncio.Lock()
 compiloed_patterns = []
+log_dir = "log"
 
 
 def initialize_log(suppress_types):
+    global compiloed_patterns
+    if not os.path.exists(log_dir):
+        os.makedirs(log_dir)
+    compiloed_patterns = []
     for pattern in suppress_types:
         c_pattern = re.compile(pattern)
         compiloed_patterns.append(c_pattern)
+    return True
 
 
 async def log(type_, message):
