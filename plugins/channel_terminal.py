@@ -20,6 +20,7 @@ ACP version: Message body is a JSON-RPC 2.0 object, following the ACP specificat
 
 
 class ChannelTerminal(Channel):
+    num_instance = 0
 
     @classmethod
     async def async_input(cls, prompt: str) -> str:
@@ -27,6 +28,12 @@ class ChannelTerminal(Channel):
         return (await asyncio.to_thread(sys.stdin.readline)).rstrip("\n")
 
     async def initialize(self, channel_name, channel_settings):
+        if ChannelTerminal.num_instance > 0:
+            msg = f"Channel {self.channel_name}: ChannelTerminal can have only one instance. Aborting..."
+            await log("error", msg)
+            print(msg)
+            return False
+        ChannelTerminal.num_instance = 1
         self.init_state = "before_init"
         self._initialized = asyncio.Event()
         self._wait_response = asyncio.Event()
