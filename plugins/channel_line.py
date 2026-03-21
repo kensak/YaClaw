@@ -1,3 +1,4 @@
+import os
 import sys
 import asyncio
 from aiohttp import web
@@ -18,15 +19,36 @@ from linebot.v3.webhooks import (
     RoomSource,
 )
 from linebot.v3.exceptions import InvalidSignatureError
-sys.path.append('../')
+
+sys.path.append("../")
 from yaclaw.channel import Channel
 from yaclaw.log import log
 
 """
 LINE Messaging API channel plugin for YaClaw.
 
+ACP version: Message body is a JSON-RPC 2.0 object, following the ACP specification.
 Receives messages from LINE via Webhook and replies using the Reply API.
 cf. https://github.com/line/line-bot-sdk-python
+
+ACP flow:
+  start_listener() runs two concurrent tasks:
+    _acp_init_task : sends ACP initialize → waits for _initialized event
+                     → sends session/new (with cwd from initialize response)
+                     → _session_ready is set, unblocking webhook_handler
+    _webhook_task  : starts the aiohttp webhook server immediately;
+                     incoming messages wait for _session_ready before
+                     being forwarded as session/prompt requests
+
+Chunk accumulation:
+  ACP notifications with *_chunk updates are accumulated in _current_body.
+  When stopReason is received the full accumulated text is sent in one
+  Reply API call (LINE messages have a single-use 30-second reply token).
+
+Permission requests:
+  session/request_permission is handled automatically by the plugin:
+  it selects "allow_always" if available, otherwise "allow_once".
+  If neither option is available a JSON-RPC error is returned.
 
 Required settings:
   channel_access_token : LINE channel access token
@@ -42,17 +64,16 @@ Optional settings:
 Notes:
   - The Reply API reply_token expires 30 seconds after the original message.
     If the agent takes longer than 30 seconds to respond, the reply will fail.
-  - The reply_token is single-use. Only the first substantive response is sent
-    via Reply API; any additional responses are logged and discarded.
-  - The Loading Animation (shown when "[...]" is received) is supported only
-    for 1:1 chats (UserSource). It is silently skipped for groups and rooms.
+  - The reply_token is single-use; it is consumed when _send_accumulated() fires.
+  - The Loading Animation is shown immediately after session/prompt is sent
+    and is supported only for 1:1 chats (UserSource).
   - LINE requires the webhook endpoint to be reachable over HTTPS.
     Use a reverse proxy or a tunnelling tool (e.g. ngrok) for local development.
 """
 
 # Reply API limits
-_MAX_MSG_LEN  = 5000   # max characters per TextMessage
-_MAX_MESSAGES = 5      # max messages per reply
+_MAX_MSG_LEN = 5000  # max characters per TextMessage
+_MAX_MESSAGES = 5  # max messages per reply
 
 
 class ChannelLine(Channel):
@@ -74,17 +95,17 @@ class ChannelLine(Channel):
             print(msg)
             return False
 
-        self.target_id    = channel_settings.get("target_id",    None)
+        self.target_id = channel_settings.get("target_id", None)
         if self.target_id == "null" or self.target_id == "":
             self.target_id = None
-        self.host         = channel_settings.get("host",         "0.0.0.0")
-        self.port         = channel_settings.get("port",         8000)
+        self.host = channel_settings.get("host", "0.0.0.0")
+        self.port = channel_settings.get("port", 8000)
         self.webhook_path = channel_settings.get("webhook_path", "/webhook")
 
         # LINE SDK objects (kept alive for the duration of the channel)
-        self.parser      = WebhookParser(self.channel_secret)
-        configuration    = Configuration(access_token=self.channel_access_token)
-        self.api_client  = AsyncApiClient(configuration)
+        self.parser = WebhookParser(self.channel_secret)
+        configuration = Configuration(access_token=self.channel_access_token)
+        self.api_client = AsyncApiClient(configuration)
         self.messaging_api = AsyncMessagingApi(self.api_client)
 
         # Reply token received from the latest inbound message.
@@ -93,14 +114,75 @@ class ChannelLine(Channel):
         # user_id of the latest sender; used for loading animation (1:1 only).
         self.current_user_id = None
 
+        # ACP protocol state
+        self._init_state = "before_init"
+        self._initialized = asyncio.Event()  # set after initialize response
+        self._session_ready = asyncio.Event()  # set after session/new response
+        self.num_method_calls = 0
+        self.session_id = None
+        self.work_dir = None
+
+        # Chunk accumulation buffer
+        self._current_body: str = ""
+
         self._stop_event = asyncio.Event()
-        self._runner     = None
+        self._runner = None
 
         await log("trace", f"LINE channel {self.channel_name}: Initialized.")
         return True
 
+    # ------------------------------------------------------------------
+    # start_listener — run ACP init and webhook server concurrently
+    # ------------------------------------------------------------------
+
     async def start_listener(self):
         await log("trace", f"LINE channel {self.channel_name}: Starting listener...")
+        async with asyncio.TaskGroup() as tg:
+            tg.create_task(self._acp_init_task())
+            tg.create_task(self._webhook_task())
+
+    async def _acp_init_task(self):
+        """Send ACP initialize, then session/new once the cwd is known."""
+        self.num_method_calls += 1
+        body = {
+            "jsonrpc": "2.0",
+            "id": self.num_method_calls,
+            "method": "initialize",
+            "params": {
+                "protocolVersion": 1,
+                "clientInfo": {
+                    "name": self.channel_name,
+                    "title": self.channel_name,
+                    "version": "1.0.0",
+                },
+            },
+        }
+        await log(
+            "channel_line_dump",
+            f"Channel {self.channel_name}: ACP initialize request: {body}",
+        )
+        await self.handle_request_message(body)
+
+        # Block until handle_response_message() processes the initialize response
+        # and populates self.work_dir.
+        await self._initialized.wait()
+
+        self.num_method_calls += 1
+        body = {
+            "jsonrpc": "2.0",
+            "id": self.num_method_calls,
+            "method": "session/new",
+            "params": {"cwd": self.work_dir, "mcpServers": []},
+        }
+        await log(
+            "channel_line_dump",
+            f"Channel {self.channel_name}: New session request: {body}",
+        )
+        await self.handle_request_message(body)
+        # _session_ready is set by handle_response_message() after session/new succeeds.
+
+    async def _webhook_task(self):
+        """Start the aiohttp webhook server and block until stop() is called."""
 
         async def webhook_handler(request: web.Request) -> web.Response:
             signature = request.headers.get("X-Line-Signature", "")
@@ -111,10 +193,16 @@ class ChannelLine(Channel):
             try:
                 events = self.parser.parse(body, signature)
             except InvalidSignatureError:
-                await log("warning", f"LINE channel {self.channel_name}: Invalid signature. Rejecting request.")
+                await log(
+                    "warning",
+                    f"LINE channel {self.channel_name}: Invalid signature. Rejecting request.",
+                )
                 return web.Response(status=400, text="Invalid signature")
             except Exception as e:
-                await log("error", f"LINE channel {self.channel_name}: Failed to parse webhook body: {e}")
+                await log(
+                    "error",
+                    f"LINE channel {self.channel_name}: Failed to parse webhook body: {e}",
+                )
                 return web.Response(status=400, text="Bad request")
 
             for event in events:
@@ -136,20 +224,57 @@ class ChannelLine(Channel):
                         source_id = None
 
                     if source_id != self.target_id:
-                        await log("trace",
+                        await log(
+                            "trace",
                             f"LINE channel {self.channel_name}: "
-                            f"Message from '{source_id}' filtered out (target_id={self.target_id}).")
+                            f"Message from '{source_id}' filtered out (target_id={self.target_id}).",
+                        )
                         continue
 
-                # Store reply_token and sender id for use in handle_response_message
+                # Store reply_token and sender id for use in _send_accumulated()
                 self.current_reply_token = event.reply_token
                 self.current_user_id = (
-                    event.source.user_id if isinstance(event.source, UserSource) else None
+                    event.source.user_id
+                    if isinstance(event.source, UserSource)
+                    else None
                 )
 
-                await log("info",
-                    f"LINE channel {self.channel_name}: Received message: {event.message.text}")
-                await self.handle_request_message(event.message.text)
+                await log(
+                    "info",
+                    f"LINE channel {self.channel_name}: Received message: {event.message.text}",
+                )
+
+                # Gate: wait until ACP session is ready before forwarding
+                await self._session_ready.wait()
+
+                self.num_method_calls += 1
+                acp_body = {
+                    "jsonrpc": "2.0",
+                    "id": self.num_method_calls,
+                    "method": "session/prompt",
+                    "params": {
+                        "sessionId": self.session_id,
+                        "prompt": [{"type": "text", "text": event.message.text}],
+                    },
+                }
+                await log(
+                    "channel_line_dump",
+                    f"Channel {self.channel_name}: User message request: {acp_body}",
+                )
+                await self.handle_request_message(acp_body)
+
+                # Show loading animation immediately after forwarding the prompt
+                if self.current_user_id is not None:
+                    try:
+                        await self.messaging_api.show_loading_animation(
+                            ShowLoadingAnimationRequest(chat_id=self.current_user_id)
+                        )
+                    except Exception as e:
+                        await log(
+                            "trace",
+                            f"LINE channel {self.channel_name}: "
+                            f"Loading animation not sent (may be unsupported in this context): {e}",
+                        )
 
             return web.Response(status=200, text="OK")
 
@@ -161,63 +286,184 @@ class ChannelLine(Channel):
         site = web.TCPSite(self._runner, self.host, self.port)
         await site.start()
 
-        msg = (f"Channel {self.channel_name}: "
-               f"LINE webhook server listening on {self.host}:{self.port}{self.webhook_path}")
+        msg = (
+            f"Channel {self.channel_name}: "
+            f"LINE webhook server listening on {self.host}:{self.port}{self.webhook_path}"
+        )
         await log("info", msg)
         print(msg)
 
         # Block here until stop() is called
         await self._stop_event.wait()
 
+    # ------------------------------------------------------------------
+    # handle_response_message — ACP response / notification dispatcher
+    # ------------------------------------------------------------------
+
     async def handle_response_message(self, response):
-        response_body = response.get("body", "")
-        await log("trace", f"LINE channel {self.channel_name}: Sending response: {response_body}")
-
-        if not response_body:
-            await log("trace", f"LINE channel {self.channel_name}: Response body is empty. Skipping...")
+        body = response.get("body", None)
+        if body is None:
             return
 
-        # "[...]" is the thinking indicator → show loading animation for 1:1 chats
-        if response_body == "[...]":
-            if self.current_user_id is not None and self.response_message_queue.empty():
-                try:
-                    await self.messaging_api.show_loading_animation(
-                        ShowLoadingAnimationRequest(chat_id=self.current_user_id)
+        await log(
+            "channel_line_dump",
+            f"Channel {self.channel_name}: Received response: {body}",
+        )
+
+        id_ = body.get("id", None)
+
+        # ---- ACP handshake states ----------------------------------------
+
+        if self._init_state == "before_init":
+            self._init_state = "before_session_new"
+            try:
+                self.work_dir = os.path.abspath(
+                    body["result"]["_meta"]["yaclaw"]["cwd"]
+                )
+            except Exception:
+                self.work_dir = os.path.abspath(".")
+            self._initialized.set()
+            msg = f"Channel {self.channel_name}: ACP initialization response received. cwd={self.work_dir}"
+            await log("info", msg)
+            print(msg)
+            return
+
+        if self._init_state == "before_session_new":
+            self._init_state = "ready"
+            result = body.get("result", {})
+            self.session_id = result.get("sessionId", None)
+            self._session_ready.set()
+            msg = f"Channel {self.channel_name}: Session ready. session_id={self.session_id}"
+            await log("info", msg)
+            print(msg)
+            return
+
+        # ---- Notification (no id) ----------------------------------------
+
+        if id_ is None:
+            params = body.get("params", {})
+            update = params.get("update", {})
+            session_update = update.get("sessionUpdate", "")
+            if session_update.endswith("_chunk"):
+                content = update.get("content", {})
+                if isinstance(content, list):
+                    content = content[0] if content else {}
+                text = content.get("text", "")
+                if text:
+                    self._current_body += text
+                    await log(
+                        "channel_line_dump",
+                        f"Channel {self.channel_name}: Chunk accumulated ({len(self._current_body)} chars total)",
                     )
-                except Exception as e:
-                    await log("trace",
-                        f"LINE channel {self.channel_name}: "
-                        f"Loading animation not sent (may be unsupported in this context): {e}")
+            # Other notification types (session_info_update, plan, …) are
+            # intentionally ignored in this basic implementation.
             return
 
-        # Consume the reply_token (single-use, 30-second TTL)
+        # ---- Agent-initiated request (has id + method) -------------------
+
+        method = body.get("method", "")
+        if method == "session/request_permission":
+            params = body.get("params", {})
+            options = params.get("options", [])
+            # Prefer allow_always, fall back to allow_once, error otherwise
+            chosen = next(
+                (o for o in options if o.get("optionId") == "allow_always"), None
+            )
+            if chosen is None:
+                chosen = next(
+                    (o for o in options if o.get("optionId") == "allow_once"), None
+                )
+            if chosen is not None:
+                reply_body = {
+                    "jsonrpc": "2.0",
+                    "id": id_,
+                    "result": {
+                        "outcome": {
+                            "outcome": "selected",
+                            "optionId": chosen["optionId"],
+                        }
+                    },
+                }
+                await log(
+                    "channel_line_dump",
+                    f"Channel {self.channel_name}: Auto-approved permission request with '{chosen['optionId']}'",
+                )
+            else:
+                reply_body = {
+                    "jsonrpc": "2.0",
+                    "id": id_,
+                    "error": {"code": -32000, "message": "No allow option available"},
+                }
+                await log(
+                    "warning",
+                    f"Channel {self.channel_name}: No allow option in session/request_permission. Returning error.",
+                )
+            await self.handle_request_message(reply_body)
+            return
+
+        # ---- Method response (session/prompt complete, etc.) -------------
+
+        result = body.get("result", {})
+        stop_reason = result.get("stopReason", "")
+        if stop_reason:
+            await self._send_accumulated()
+            msg = f"Channel {self.channel_name}: Response complete (stopReason: {stop_reason})"
+            await log("info", msg)
+            print(msg)
+
+    # ------------------------------------------------------------------
+    # _send_accumulated — send buffered chunks via LINE Reply API
+    # ------------------------------------------------------------------
+
+    async def _send_accumulated(self):
+        """Send the accumulated chunk body as a LINE reply, then reset state."""
+        text = self._current_body
+        self._current_body = ""
+
+        if not text:
+            await log(
+                "trace",
+                f"LINE channel {self.channel_name}: No accumulated text to send.",
+            )
+            return
+
         reply_token = self.current_reply_token
         if reply_token is None:
-            await log("warning",
+            await log(
+                "warning",
                 f"LINE channel {self.channel_name}: "
                 "No reply token available. The token may have already been used or expired (>30 s). "
-                "Response will be discarded.")
+                "Response will be discarded.",
+            )
             return
         self.current_reply_token = None  # clear immediately to prevent accidental reuse
 
         # Split long responses into at most _MAX_MESSAGES chunks of _MAX_MSG_LEN chars
         messages = []
-        remaining = response_body
+        remaining = text
         while remaining and len(messages) < _MAX_MESSAGES:
             messages.append(TextMessage(text=remaining[:_MAX_MSG_LEN]))
             remaining = remaining[_MAX_MSG_LEN:]
 
         if remaining:
-            await log("warning",
+            await log(
+                "warning",
                 f"LINE channel {self.channel_name}: "
-                f"Response exceeded {_MAX_MESSAGES * _MAX_MSG_LEN} chars and was truncated.")
+                f"Response exceeded {_MAX_MESSAGES * _MAX_MSG_LEN} chars and was truncated.",
+            )
 
         try:
             await self.messaging_api.reply_message(
                 ReplyMessageRequest(reply_token=reply_token, messages=messages)
             )
         except Exception as e:
-            await log("error", f"LINE channel {self.channel_name}: Failed to send reply: {e}")
+            await log(
+                "error", f"LINE channel {self.channel_name}: Failed to send reply: {e}"
+            )
+
+    # ------------------------------------------------------------------
+    # stop / finalize
+    # ------------------------------------------------------------------
 
     async def stop(self):
         await log("trace", f"LINE channel {self.channel_name}: Stopping...")
