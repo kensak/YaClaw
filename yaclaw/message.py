@@ -12,7 +12,7 @@ class Message(BaseModel):
 
 def is_message(obj):
     try:
-        Message(obj)
+        Message(**obj)
         return True
     except Exception:
         return False

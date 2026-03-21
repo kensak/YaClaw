@@ -17,7 +17,7 @@ class Agent(ABC):
 
     @final
     async def __initialize(self, agent_name, agent_settings):
-        await log("trace", f"Agent {agent_name}: Initializing...")
+        await log(agent_name, "trace", f"Initializing...")
         self.agent_name = agent_name
         self.settings = agent_settings
         self.request_message_queue = asyncio.Queue()
@@ -33,22 +33,32 @@ class Agent(ABC):
 
     @final
     async def __start_handler(self):
-        await log("trace", f"Agent {self.agent_name}: Starting handler...")
+        await log(self.agent_name, "trace", f"Starting handler...")
         await self.start_handler()
 
     @final
     async def __start_queue_handler(self):
-        await log("trace", f"Agent {self.agent_name}: Starting queue handler...")
+        await log(
+            self.agent_name,
+            "trace",
+            f"Starting queue handler...",
+        )
         while True:
             request = await self.request_message_queue.get()
             await log(
-                "trace", f"Agent {self.agent_name} got message from queue: {request}"
+                self.agent_name,
+                "trace",
+                f"Got message from queue: {request}",
             )
             await self.__handle_request_message(request)
 
     @final
     async def __start(self):
-        await log("trace", f"Agent {self.agent_name}: Starting queue and handler...")
+        await log(
+            self.agent_name,
+            "trace",
+            f"Starting queue and handler...",
+        )
         async with asyncio.TaskGroup() as tg:
             task1 = tg.create_task(self.__start_handler())
             task2 = tg.create_task(self.__start_queue_handler())
@@ -60,11 +70,15 @@ class Agent(ABC):
     @final
     async def __handle_request_message(self, request):
         await log(
-            "trace", f"Agent {self.agent_name} is handling request message : {request}"
+            self.agent_name,
+            "trace",
+            f"Handling request message: {request}",
         )
         await self.handle_request_message(request)
         await log(
-            "trace", f"Finished handling request message for agent {self.agent_name}."
+            self.agent_name,
+            "trace",
+            "Finished handling request message.",
         )
 
     @final
@@ -75,12 +89,13 @@ class Agent(ABC):
         else:
             response["reply_to"] = request["reply_to"]
         to_ = request["to_"]
-        if type(to_) == str:
+        if isinstance(to_, str):
             to_ = [to_]
         if to_[0] != self.agent_name:
             await log(
+                self.agent_name,
                 "warning",
-                f"Handler for agent {self.agent_name}: Message is not destined for this agent. Message: {request}",
+                f"Message is not destined for this agent. Message: {request}",
             )
         response["from_"] = to_[0]
         response["to_"] = to_[1:]
@@ -96,7 +111,11 @@ class Agent(ABC):
     async def handle_response_message(self, response):
         from yaclaw.channel import ChannelManager
 
-        await log("trace", f"Agent {self.agent_name} is responding: {response}")
+        await log(
+            self.agent_name,
+            "trace",
+            f"Responding: {response}",
+        )
         if "reply_to" in response:
             dest_agent_name = (
                 response["to_"]
@@ -105,24 +124,28 @@ class Agent(ABC):
             )
             dest_agent = AgentManager.get_agent(dest_agent_name)
             await log(
+                self.agent_name,
                 "trace",
-                f"Agent {self.agent_name}: Putting response message in queue for agent {dest_agent.agent_name}...",
+                f"Putting response message in queue for agent {dest_agent.agent_name}...",
             )
             await dest_agent.request_message_queue.put(response)
             await log(
+                self.agent_name,
                 "trace",
-                f"Agent {self.agent_name}: Response message put in queue for agent {dest_agent.agent_name}.",
+                f"Response message put in queue for agent {dest_agent.agent_name}.",
             )
         else:
             channel = ChannelManager.get_channel(response["to_"])
             await log(
+                self.agent_name,
                 "trace",
-                f"Agent {self.agent_name}: Putting response message in queue for channel {channel.channel_name}...",
+                f"Putting response message in queue for channel {channel.channel_name}...",
             )
             await channel.response_message_queue.put(response)
             await log(
+                self.agent_name,
                 "trace",
-                f"Agent {self.agent_name}: Response message put in queue for channel {channel.channel_name}.",
+                f"Response message put in queue for channel {channel.channel_name}.",
             )
 
     @abstractmethod
@@ -135,11 +158,11 @@ class Agent(ABC):
 
     @final
     async def __finalize(self):
-        await log("trace", f"Finalizing agent: {self.agent_name}...")
+        await log(self.agent_name, "trace", "Finalizing agent...")
         await self.stop()
         await self.finalize()
         self.request_message_queue.shutdown(immediate=True)
-        await log("trace", f"Agent {self.agent_name} finalized.")
+        await log(self.agent_name, "trace", "Agent finalized.")
 
 
 class AgentManager:
@@ -149,24 +172,33 @@ class AgentManager:
 
     @classmethod
     async def initialize(cls, agent_settings):
-        await log("trace", "AgentManager: Initializing agents...")
+        await log("AgentManager", "trace", "Initializing agents...")
         cls.__agent_settings = agent_settings
 
         # Create and register agents.
         for agent_name, settings in agent_settings.items():
-            await log("trace", f"AgentManager: Creating agent: {agent_name}...")
+            await log(
+                "AgentManager",
+                "trace",
+                f"Creating agent: {agent_name}...",
+            )
 
             plugin_name = settings.get("plugin", None)
             if plugin_name is None:
                 await log(
+                    "AgentManager",
                     "error",
-                    f"AgentManager: No plugin specified for agent {agent_name}. Aborting...",
+                    f"No plugin specified for agent {agent_name}. Aborting...",
                 )
                 return False
             plugin_path = f"plugins/{plugin_name}.py"
 
             if plugin_name not in sys.modules:
-                await log("trace", f"AgentManager: Loading {plugin_name} plugin...")
+                await log(
+                    "AgentManager",
+                    "trace",
+                    f"Loading {plugin_name} plugin...",
+                )
                 loader = importlib.machinery.SourceFileLoader(plugin_name, plugin_path)
                 spec = importlib.util.spec_from_loader(loader.name, loader)
                 module = importlib.util.module_from_spec(spec)
@@ -174,8 +206,9 @@ class AgentManager:
                 loader.exec_module(module)
             else:
                 await log(
+                    "AgentManager",
                     "trace",
-                    f"AgentManager: {plugin_name} plugin already loaded. Reusing...",
+                    f"{plugin_name} plugin already loaded. Reusing...",
                 )
                 module = sys.modules[plugin_name]
 
@@ -191,20 +224,26 @@ class AgentManager:
 
             if class_ is None:
                 await log(
+                    "AgentManager",
                     "error",
-                    f"AgentManager.initialize: No Agent derived class found in plugin {plugin_name} for agent {agent_name}. Aborting...",
+                    f"No Agent derived class found in plugin {plugin_name} for agent {agent_name}. Aborting...",
                 )
                 return False
             # Instantiate agent object and register.
             agent_instance = class_()
             if not await agent_instance._Agent__initialize(agent_name, settings):
                 await log(
+                    "AgentManager",
                     "error",
-                    f"AgentManager.initialize: Failed to initialize agent {agent_name} with plugin {plugin_name}. Aborting...",
+                    f"Failed to initialize agent {agent_name} with plugin {plugin_name}. Aborting...",
                 )
                 return False
             cls.__agent_dict[agent_name] = agent_instance
-            await log("trace", f"AgentManager: {agent_name} agent initialized.")
+            await log(
+                "AgentManager",
+                "trace",
+                f"{agent_name} agent initialized.",
+            )
 
         return True
 
@@ -214,16 +253,16 @@ class AgentManager:
 
     @classmethod
     async def start_all(cls):
-        await log("trace", "AgentManager: Starting all agents...")
+        await log("AgentManager", "trace", "Starting all agents...")
         async with asyncio.TaskGroup() as tg:
             for agent_name, settings in cls.__agent_settings.items():
                 agent_instance = cls.__agent_dict.get(agent_name)
                 tg.create_task(agent_instance._Agent__start())
-        await log("trace", "AgentManager: All agents started.")
+        await log("AgentManager", "trace", "All agents started.")
 
     @classmethod
     async def finalize(cls):
-        await log("trace", "AgentManager: Finalizing all agents...")
+        await log("AgentManager", "trace", "Finalizing all agents...")
         for agent_name, agent_instance in cls.__agent_dict.items():
             await agent_instance._Agent__finalize()
-        await log("trace", "AgentManager: All agents finalized.")
+        await log("AgentManager", "trace", "All agents finalized.")

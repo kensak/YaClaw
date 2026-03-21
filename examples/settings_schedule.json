@@ -8,16 +8,14 @@
         },
         "schedule": {
             "plugin": "channel_schedule",
+            "agent": "opencode",
+            "forward_acp_chunks_to": "discord",
             "entry": {
                 "morning_routine": {
-                    "agent": "opencode",
-                    "reply_to": "discord",
                     "everyday_at": "08:00",
                     "message": "What is the weather today?"
                 },
                 "heartbeat": {
-                    "agent": "opencode",
-                    "reply_to": "discord",
                     "every_n_minutes": 30,
                     "message": "Is everything okay?"
                 }
@@ -28,7 +26,7 @@
         "opencode": {
             "plugin": "agent_acp",
             "command": "opencode",
-            "args": ["acp", "-c"],
+            "args": ["acp"],
             "work_dir": "workspace/opencode"
         }
     }

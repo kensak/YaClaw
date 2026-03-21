@@ -12,7 +12,7 @@
         "gemini": {
             "plugin": "agent_acp",
             "command": "gemini",
-            "args": ["--experimental-acp", "-r", "latest"],
+            "args": ["--experimental-acp"],
             "work_dir": "workspace/gemini"
         }
     }

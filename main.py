@@ -15,8 +15,8 @@ async def main():
     return_code = 0
 
     try:
-        await log("info", "----------------------------------------")
-        await log("info", "YaClaw starting...")
+        await log("main", "info", "----------------------------------------")
+        await log("main", "info", "YaClaw starting...")
 
         # .envファイルから環境変数を読み込む
         load_dotenv()
@@ -63,11 +63,11 @@ async def main():
             settings_str = eval_env_var(settings_str)
         except Exception as e:
             msg = f"Error evaluating environment variables in settings.json: {e}"
-            await log("error", msg)
+            await log("main", "error", msg)
             print(msg)
             return 1
         settings = json.loads(settings_str)
-        await log("trace", "Settings loaded.")
+        await log("main", "trace", "Settings loaded.")
 
         if not initialize_log(settings.get("logging", {}).get("suppress_types", [])):
             return 2
@@ -87,30 +87,30 @@ async def main():
             task2 = tg.create_task(AgentManager.start_all())
 
     except asyncio.CancelledError:
-        await log("trace", "Cancel detected. Stopping...")
+        await log("main", "trace", "Cancel detected. Stopping...")
     except KeyboardInterrupt:
-        await log("trace", "KeyboardInterrupt detected. Stopping...")
+        await log("main", "trace", "KeyboardInterrupt detected. Stopping...")
     except ExceptionGroup as eg:
         return_code = 5
         msg = f"Exceptions occurred in TaskGroup: {eg}"
-        await log("error", msg)
+        await log("main", "error", msg)
         print(msg)
         error_trace = traceback.format_exc()
-        await log("exception_trace", error_trace)
+        await log("main", "exception_trace", error_trace)
     except Exception as e:
         return_code = 6
         msg = f"An unhandled exception occurred: {e}"
-        await log("error", msg)
+        await log("main", "error", msg)
         print(msg)
         error_trace = traceback.format_exc()
-        await log("exception_trace", error_trace)
+        await log("main", "exception_trace", error_trace)
     finally:
-        await log("trace", "Finalizing...")
+        await log("main", "trace", "Finalizing...")
         await ChannelManager.finalize()
-        await log("trace", "Channels finalized.")
+        await log("main", "trace", "Channels finalized.")
         await AgentManager.finalize()
-        await log("trace", "Agents finalized.")
-        await log("info", "YaClaw stopped.")
+        await log("main", "trace", "Agents finalized.")
+        await log("main", "info", "YaClaw stopped.")
         close_log()
 
     return return_code

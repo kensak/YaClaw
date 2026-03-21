@@ -22,7 +22,7 @@ def initialize_log(suppress_types):
     return True
 
 
-async def log(type_, message):
+async def log(name, type_, message):
     global f, current_date_str, lock
 
     for c_pattern in compiloed_patterns:
@@ -40,6 +40,7 @@ async def log(type_, message):
 
         log_entry = {
             "time": now.strftime("%H:%M:%S.%f")[:-3],
+            "name": name,
             "type": type_,
             "message": message,
         }

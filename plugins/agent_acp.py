@@ -94,6 +94,9 @@ class HandlerACP(Agent):
         # Retained so the stale _session_map entry can be cleaned up once session/load succeeds.
         self._session_load_old_sid: dict[int | str, str | None] = {}
 
+        # channel_name → the name of the channel to forward ACP chunks to.
+        self._forward_acp_chunks_to: dict[str, str] = {}
+
         # Absolute path to the working directory for the subprocess (defaults to current dir).
         self.work_dir: str = os.path.abspath(self.settings.get("work_dir", "."))
 
@@ -114,8 +117,9 @@ class HandlerACP(Agent):
 
         while not self._shutdown:
             await log(
-                "acp",
-                f"Agent {self.agent_name}: spawning ACP process: {command} {' '.join(args)}",
+                self.agent_name,
+                "trace",
+                f"Spawning ACP process: {command} {' '.join(args)}",
             )
             try:
                 self._process = await asyncio.create_subprocess_exec(
@@ -128,13 +132,13 @@ class HandlerACP(Agent):
                     env=env,
                 )
             except FileNotFoundError:
-                msg = f"Agent {self.agent_name}: command not found: {command}"
-                await log("error", msg)
+                msg = f"Command not found: {command}"
+                await log(self.agent_name, "error", msg)
                 print(msg)
                 return  # Cannot start — do not retry.
 
-            msg = f"Agent {self.agent_name}: ACP process started (PID={self._process.pid})."
-            await log("acp", msg)
+            msg = f"ACP process started (PID={self._process.pid})."
+            await log(self.agent_name, "trace", msg)
             print(msg)
 
             # Process is up — allow handle_request_message() to proceed.
@@ -150,15 +154,17 @@ class HandlerACP(Agent):
             except* Exception as eg:
                 for exc in eg.exceptions:
                     await log(
+                        self.agent_name,
                         "error",
-                        f"Agent {self.agent_name}: exception in subprocess task: {exc}",
+                        f"Exception in subprocess task: {exc}",
                     )
 
             # Process has exited — reset state before the next restart cycle.
             exit_code = self._process.returncode
             await log(
-                "acp",
-                f"Agent {self.agent_name}: ACP process exited (code={exit_code}).",
+                self.agent_name,
+                "trace",
+                f"ACP process exited (code={exit_code}).",
             )
             self._id_map.clear()
             self._session_map.clear()
@@ -170,7 +176,7 @@ class HandlerACP(Agent):
                 break
 
             # Brief delay before restarting to prevent a tight crash-restart loop.
-            await log("acp", f"Agent {self.agent_name}: restarting in 3 seconds...")
+            await log(self.agent_name, "trace", f"Restarting in 3 seconds...")
             await asyncio.sleep(3)
 
     # ------------------------------------------------------------------
@@ -192,12 +198,13 @@ class HandlerACP(Agent):
                 obj = json.loads(text)
             except json.JSONDecodeError as e:
                 await log(
-                    "acp",
-                    f"Agent {self.agent_name}: stdout JSON parse error: {e} | raw: {text[:200]}",
+                    self.agent_name,
+                    "warning",
+                    f"stdout JSON parse error: {e} | raw: {text[:200]}",
                 )
                 continue
 
-            await log("acp_dump", f"Agent {self.agent_name}: stdout: {obj}")
+            await log(self.agent_name, "dump", f"stdout: {obj}")
 
             id_ = obj.get("id")
 
@@ -206,8 +213,9 @@ class HandlerACP(Agent):
                 original_request = self._id_map.pop(id_, None)
                 if original_request is None:
                     await log(
-                        "acp",
-                        f"Agent {self.agent_name}: received response for unknown id={id_}. Ignoring.",
+                        self.agent_name,
+                        "warning",
+                        f"Received response for unknown id={id_}. Ignoring.",
                     )
                     continue
 
@@ -228,8 +236,9 @@ class HandlerACP(Agent):
                                 original_request
                             )
                             await log(
-                                "acp",
-                                f"Agent {self.agent_name}: session/new → registered sessionId={new_sid}",
+                                self.agent_name,
+                                "trace",
+                                f"session/new → registered sessionId={new_sid}",
                             )
 
                     elif method == "session/load":
@@ -249,8 +258,9 @@ class HandlerACP(Agent):
                                     # Delete the key when the list becomes empty.
                                     del self._session_map[old_sid]
                                 await log(
-                                    "acp",
-                                    f"Agent {self.agent_name}: session/load → removed old sessionId={old_sid}",
+                                    self.agent_name,
+                                    "trace",
+                                    f"session/load → removed old sessionId={old_sid}",
                                 )
 
                 # Forward the response back to the channel.
@@ -271,8 +281,9 @@ class HandlerACP(Agent):
 
                 if not requests_list:
                     await log(
-                        "acp",
-                        f"Agent {self.agent_name}: agent-initiated request '{obj.get('method')}' "
+                        self.agent_name,
+                        "warning",
+                        f"Agent-initiated request '{obj.get('method')}' "
                         f"for unknown sessionId={session_id!r}. Ignoring.",
                     )
                     continue
@@ -294,8 +305,9 @@ class HandlerACP(Agent):
 
                 if not requests_list:
                     await log(
-                        "acp",
-                        f"Agent {self.agent_name}: notification for unknown sessionId={session_id!r}. Ignoring.",
+                        self.agent_name,
+                        "warning",
+                        f"Notification for unknown sessionId={session_id!r}. Ignoring.",
                     )
                     continue
 
@@ -303,6 +315,18 @@ class HandlerACP(Agent):
                 for req in requests_list:
                     response = await self.create_response_skeleton(req)
                     response["body"] = obj
+
+                    # If the channel has a `forward_acp_chunks_to` setting and the message is update chunk,
+                    # override the destination.
+                    forward_to = self._forward_acp_chunks_to.get(response.get("to_"))
+                    if forward_to:
+                        try:
+                            sessionUpdate = obj["params"]["update"]["sessionUpdate"]
+                        except KeyError:
+                            sessionUpdate = ""
+                        if sessionUpdate[-6:] == "_chunk":
+                            response["to_"] = forward_to
+
                     await self.handle_response_message(response)
 
     # ------------------------------------------------------------------
@@ -317,7 +341,11 @@ class HandlerACP(Agent):
                 break
             text = line.decode("utf-8", errors="replace").rstrip()
             if text:
-                await log("acp_stderr", f"Agent {self.agent_name} [stderr]: {text}")
+                await log(
+                    self.agent_name,
+                    "stderr",
+                    f"stderr: {text}",
+                )
 
     # ------------------------------------------------------------------
     # handle_request_message — write incoming JSON-RPC from the channel to stdin
@@ -329,7 +357,11 @@ class HandlerACP(Agent):
         await self._ready_event.wait()
 
         if self._process is None or self._process.stdin is None:
-            await log("error", f"Agent {self.agent_name}: process not available.")
+            await log(
+                self.agent_name,
+                "error",
+                f"Process not available.",
+            )
             return
 
         body: dict = request.get("body", {})
@@ -343,7 +375,16 @@ class HandlerACP(Agent):
         # agent-initiated request (e.g. session/request_permission).
         # Just pass it through to stdin — no _id_map entry needed.
 
-        if method == "session/load":
+        if method == "initialize":
+            # Set the forward_acp_chunks_to for the source channel if specified in the request's _meta.
+            try:
+                self._forward_acp_chunks_to[request["from_"]] = body["params"]["_meta"][
+                    "yaclaw"
+                ]["forward_acp_chunks_to"]
+            except KeyError:
+                pass
+
+        elif method == "session/load":
             # Pre-register the new sessionId immediately so that any session/update
             # notification that arrives before the success response is not dropped.
             # Also save the old sessionId so it can be cleaned up when session/load succeeds.
@@ -364,11 +405,12 @@ class HandlerACP(Agent):
                 # Remember the old sessionId for cleanup after a successful response.
                 self._session_load_old_sid[id_] = old_sid
                 await log(
-                    "acp",
-                    f"Agent {self.agent_name}: session/load → pre-registered sessionId={new_sid} (old={old_sid})",
+                    self.agent_name,
+                    "trace",
+                    f"session/load → pre-registered sessionId={new_sid} (old={old_sid})",
                 )
 
-        await log("acp_dump", f"Agent {self.agent_name}: stdin: {body}")
+        await log(self.agent_name, "dump", f"stdin: {body}")
 
         # Write the JSON-RPC object as a single line to stdin.
         line = json.dumps(body, ensure_ascii=False) + "\n"
