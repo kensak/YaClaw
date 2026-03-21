@@ -4,13 +4,17 @@ import importlib.machinery
 import importlib.util
 from abc import ABC, abstractmethod
 from typing import final
-from yaclaw.log import log
-from yaclaw.message import Message, is_message
+import yaclaw.log
+from yaclaw.message import is_message
 
 
 class Channel(ABC):
     def __init__(self):
         """__init__ canot be async, so do not put any async code here. Use async initialize() instead."""
+
+    @final
+    async def log(self, type_, message):
+        await yaclaw.log.log(self.channel_name, type_, message)
 
     @abstractmethod
     async def initialize(self, channel_name, channel_settings):
@@ -18,8 +22,8 @@ class Channel(ABC):
 
     @final
     async def __initialize(self, channel_name, channel_settings):
-        await log(channel_name, "trace", "Initializing...")
         self.channel_name = channel_name
+        await self.log("trace", "Initializing...")
         self.channel_settings = channel_settings
         # self.forward_to = self.channel_settings.get("forward_to", [])
         self.response_message_queue = asyncio.Queue()
@@ -31,24 +35,15 @@ class Channel(ABC):
 
     @final
     async def __start_listener(self):
-        await log(
-            self.channel_name,
-            "trace",
-            "Starting listener...",
-        )
+        await self.log("trace", "Starting listener...")
         await self.start_listener()
 
     @final
     async def __start_queue_handler(self):
-        await log(
-            self.channel_name,
-            "trace",
-            "Starting queue handler...",
-        )
+        await self.log("trace", "Starting queue handler...")
         while True:
             response = await self.response_message_queue.get()
-            await log(
-                self.channel_name,
+            await self.log(
                 "trace",
                 f"Got message from queue: {response}",
             )
@@ -56,11 +51,7 @@ class Channel(ABC):
 
     @final
     async def __start(self):
-        await log(
-            self.channel_name,
-            "trace",
-            "Starting queue and listener...",
-        )
+        await self.log("trace", "Starting queue and listener...")
         async with asyncio.TaskGroup() as tg:
             task1 = tg.create_task(self.__start_listener())
             task2 = tg.create_task(self.__start_queue_handler())
@@ -91,13 +82,8 @@ class Channel(ABC):
         else:
             request_message = await self.create_request_skeleton()
             request_message["body"] = request
-        await log(
-            self.channel_name,
-            "trace",
-            f"Received message: {request_message}",
-        )
-        await log(
-            self.channel_name,
+        await self.log("trace", f"Received message: {request_message}")
+        await self.log(
             "trace",
             f"Putting message in queue for agent {request_message['to_']}...",
         )
@@ -107,16 +93,14 @@ class Channel(ABC):
             to_ = to_[0]
         agent = AgentManager.get_agent(to_)
         if agent is None:
-            await log(
-                self.channel_name,
+            await self.log(
                 "error",
                 f"No agent found with name '{to_}'. Skipping...",
             )
             return
 
         await agent.request_message_queue.put(request_message)
-        await log(
-            self.channel_name,
+        await self.log(
             "trace",
             f"Message put in queue for agent {request_message['to_']}.",
         )
@@ -139,11 +123,11 @@ class Channel(ABC):
 
     @final
     async def __finalize(self):
-        await log(self.channel_name, "trace", "Finalizing channel...")
+        await self.log("trace", "Finalizing channel...")
         await self.stop()
         await self.finalize()
         self.response_message_queue.shutdown(immediate=True)
-        await log(self.channel_name, "trace", "Channel finalized.")
+        await self.log("trace", "Channel finalized.")
 
 
 class ChannelManager:
@@ -151,21 +135,20 @@ class ChannelManager:
     __channel_dict = {}  # channel_name -> Channel instance
 
     @classmethod
+    async def log(cls, type_, message):
+        await yaclaw.log.log("ChannelManager", type_, message)
+
+    @classmethod
     async def initialize(cls, channel_settings):
-        await log("ChannelManager", "trace", "Initializing channels...")
+        await cls.log("trace", "Initializing channels...")
         cls.__channel_settings = channel_settings
 
         for channel_name, settings in channel_settings.items():
-            await log(
-                "ChannelManager",
-                "trace",
-                f"Initializing channel {channel_name}...",
-            )
+            await cls.log("trace", f"Initializing channel {channel_name}...")
 
             plugin_name = settings.get("plugin", None)
             if plugin_name is None:
-                await log(
-                    "ChannelManager",
+                await cls.log(
                     "error",
                     f"No plugin specified for channel {channel_name}. Aborting...",
                 )
@@ -177,19 +160,13 @@ class ChannelManager:
                 # Load plugin
                 loader = importlib.machinery.SourceFileLoader(plugin_name, plugin_path)
                 spec = importlib.util.spec_from_loader(loader.name, loader)
-                await log(
-                    "ChannelManager",
-                    "trace",
-                    f"Loading {plugin_name} plugin...",
-                )
+                await cls.log("trace", f"Loading {plugin_name} plugin...")
                 module = importlib.util.module_from_spec(spec)
                 sys.modules[plugin_name] = module
                 loader.exec_module(module)
             else:
-                await log(
-                    "ChannelManager",
-                    "trace",
-                    f"{plugin_name} plugin already loaded. Reusing...",
+                await cls.log(
+                    "trace", f"{plugin_name} plugin already loaded. Reusing..."
                 )
                 module = sys.modules[plugin_name]
 
@@ -204,8 +181,7 @@ class ChannelManager:
                 ):
                     break
             if class_ is None:
-                await log(
-                    "ChannelManager",
+                await cls.log(
                     "error",
                     f"No Channel derived class found in plugin {plugin_name} for channel {channel_name}. Aborting...",
                 )
@@ -214,15 +190,13 @@ class ChannelManager:
             # Instantiate channel object and register.
             channel_instance = class_()
             if not await channel_instance._Channel__initialize(channel_name, settings):
-                await log(
-                    "ChannelManager",
+                await cls.log(
                     "error",
                     f"Failed to initialize channel {channel_name} with plugin {plugin_name}. Aborting...",
                 )
                 return False
             cls.__channel_dict[channel_name] = channel_instance
-            await log(
-                "ChannelManager",
+            await cls.log(
                 "trace",
                 f"{channel_name} channel initialized.",
             )
@@ -235,15 +209,15 @@ class ChannelManager:
 
     @classmethod
     async def start_all(cls):
-        await log("ChannelManager", "trace", "Starting all channels...")
+        await cls.log("trace", "Starting all channels...")
         async with asyncio.TaskGroup() as tg:
             for channel_name, channel_instance in cls.__channel_dict.items():
                 tg.create_task(channel_instance._Channel__start())
-        await log("ChannelManager", "trace", "All channels started.")
+        await cls.log("trace", "All channels started.")
 
     @classmethod
     async def finalize(cls):
-        await log("ChannelManager", "trace", "Finalizing all channels...")
+        await cls.log("trace", "Finalizing all channels...")
         for channel_name, channel_instance in cls.__channel_dict.items():
             await channel_instance._Channel__finalize()
-        await log("ChannelManager", "trace", "All channels finalized.")
+        await cls.log("trace", "All channels finalized.")

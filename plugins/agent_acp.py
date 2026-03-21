@@ -31,7 +31,6 @@ import sys
 
 sys.path.append("../")
 from yaclaw.agent import Agent
-from yaclaw.log import log
 
 
 class HandlerACP(Agent):
@@ -116,8 +115,7 @@ class HandlerACP(Agent):
         env = {**os.environ, **extra_env}
 
         while not self._shutdown:
-            await log(
-                self.agent_name,
+            await self.log(
                 "trace",
                 f"Spawning ACP process: {command} {' '.join(args)}",
             )
@@ -133,12 +131,12 @@ class HandlerACP(Agent):
                 )
             except FileNotFoundError:
                 msg = f"Command not found: {command}"
-                await log(self.agent_name, "error", msg)
+                await self.log("error", msg)
                 print(msg)
                 return  # Cannot start — do not retry.
 
             msg = f"ACP process started (PID={self._process.pid})."
-            await log(self.agent_name, "trace", msg)
+            await self.log("trace", msg)
             print(msg)
 
             # Process is up — allow handle_request_message() to proceed.
@@ -153,16 +151,15 @@ class HandlerACP(Agent):
                     tg.create_task(self._process.wait())
             except* Exception as eg:
                 for exc in eg.exceptions:
-                    await log(
-                        self.agent_name,
+                    await self.log(
                         "error",
                         f"Exception in subprocess task: {exc}",
                     )
 
             # Process has exited — reset state before the next restart cycle.
             exit_code = self._process.returncode
-            await log(
-                self.agent_name,
+            await self.log(
+                "trace",
                 "trace",
                 f"ACP process exited (code={exit_code}).",
             )
@@ -176,7 +173,7 @@ class HandlerACP(Agent):
                 break
 
             # Brief delay before restarting to prevent a tight crash-restart loop.
-            await log(self.agent_name, "trace", f"Restarting in 3 seconds...")
+            await self.log("trace", f"Restarting in 3 seconds...")
             await asyncio.sleep(3)
 
     # ------------------------------------------------------------------
@@ -197,14 +194,13 @@ class HandlerACP(Agent):
                     continue  # Skip blank lines.
                 obj = json.loads(text)
             except json.JSONDecodeError as e:
-                await log(
-                    self.agent_name,
+                await self.log(
                     "warning",
                     f"stdout JSON parse error: {e} | raw: {text[:200]}",
                 )
                 continue
 
-            await log(self.agent_name, "dump", f"stdout: {obj}")
+            await self.log("dump", f"stdout: {obj}")
 
             id_ = obj.get("id")
 
@@ -212,8 +208,7 @@ class HandlerACP(Agent):
                 # ---- Response to our request (has an id, no method field) --------
                 original_request = self._id_map.pop(id_, None)
                 if original_request is None:
-                    await log(
-                        self.agent_name,
+                    await self.log(
                         "warning",
                         f"Received response for unknown id={id_}. Ignoring.",
                     )
@@ -235,8 +230,7 @@ class HandlerACP(Agent):
                             self._session_map.setdefault(new_sid, []).append(
                                 original_request
                             )
-                            await log(
-                                self.agent_name,
+                            await self.log(
                                 "trace",
                                 f"session/new → registered sessionId={new_sid}",
                             )
@@ -257,8 +251,7 @@ class HandlerACP(Agent):
                                 if not self._session_map[old_sid]:
                                     # Delete the key when the list becomes empty.
                                     del self._session_map[old_sid]
-                                await log(
-                                    self.agent_name,
+                                await self.log(
                                     "trace",
                                     f"session/load → removed old sessionId={old_sid}",
                                 )
@@ -280,8 +273,7 @@ class HandlerACP(Agent):
                 )
 
                 if not requests_list:
-                    await log(
-                        self.agent_name,
+                    await self.log(
                         "warning",
                         f"Agent-initiated request '{obj.get('method')}' "
                         f"for unknown sessionId={session_id!r}. Ignoring.",
@@ -304,8 +296,7 @@ class HandlerACP(Agent):
                 )
 
                 if not requests_list:
-                    await log(
-                        self.agent_name,
+                    await self.log(
                         "warning",
                         f"Notification for unknown sessionId={session_id!r}. Ignoring.",
                     )
@@ -341,11 +332,7 @@ class HandlerACP(Agent):
                 break
             text = line.decode("utf-8", errors="replace").rstrip()
             if text:
-                await log(
-                    self.agent_name,
-                    "stderr",
-                    f"stderr: {text}",
-                )
+                await self.log("stderr", f"stderr: {text}")
 
     # ------------------------------------------------------------------
     # handle_request_message — write incoming JSON-RPC from the channel to stdin
@@ -357,11 +344,7 @@ class HandlerACP(Agent):
         await self._ready_event.wait()
 
         if self._process is None or self._process.stdin is None:
-            await log(
-                self.agent_name,
-                "error",
-                f"Process not available.",
-            )
+            await self.log("error", "Process not available.")
             return
 
         body: dict = request.get("body", {})
@@ -404,13 +387,12 @@ class HandlerACP(Agent):
                 self._session_map.setdefault(new_sid, []).append(request)
                 # Remember the old sessionId for cleanup after a successful response.
                 self._session_load_old_sid[id_] = old_sid
-                await log(
-                    self.agent_name,
+                await self.log(
                     "trace",
                     f"session/load → pre-registered sessionId={new_sid} (old={old_sid})",
                 )
 
-        await log(self.agent_name, "dump", f"stdin: {body}")
+        await self.log("dump", f"stdin: {body}")
 
         # Write the JSON-RPC object as a single line to stdin.
         line = json.dumps(body, ensure_ascii=False) + "\n"

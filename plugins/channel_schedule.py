@@ -6,7 +6,6 @@ from apscheduler.executors.asyncio import AsyncIOExecutor
 
 sys.path.append("../")
 from yaclaw.channel import Channel
-from yaclaw.log import log
 
 """
 Schedule channel plugin for YaClaw.
@@ -77,7 +76,7 @@ class ChannelSchedule(Channel):
     # ------------------------------------------------------------------
 
     async def start_listener(self):
-        await log(self.channel_name, "info", "Starting listener...")
+        await self.log("info", "Starting listener...")
         print(f"Schedule Channel {self.channel_name}: Starting listener...")
 
         # ---- Step 1: ACP initialize ----
@@ -100,7 +99,7 @@ class ChannelSchedule(Channel):
             "method": "initialize",
             "params": init_params,
         }
-        await log(self.channel_name, "dump", f"ACP initialize request: {body}")
+        await self.log("dump", f"ACP initialize request: {body}")
         await self.handle_request_message(body)
 
         # ---- Step 2: wait for initialize response (cwd resolved) ----
@@ -114,7 +113,7 @@ class ChannelSchedule(Channel):
             "method": "session/new",
             "params": {"cwd": self.work_dir, "mcpServers": []},
         }
-        await log(self.channel_name, "dump", f"New session request: {body}")
+        await self.log("dump", f"New session request: {body}")
         await self.handle_request_message(body)
 
         # ---- Step 4: wait for session/new response (session_id resolved) ----
@@ -124,7 +123,7 @@ class ChannelSchedule(Channel):
         dest_agent = self.channel_settings.get("agent", None)
         if dest_agent is None:
             msg = "No agent specified in channel settings. No jobs will be scheduled."
-            await log(self.channel_name, "error", msg)
+            await self.log("error", msg)
             print(f"Channel {self.channel_name}: " + msg)
         else:
             for entry_name, entry in self.entry_list.items():
@@ -143,8 +142,7 @@ class ChannelSchedule(Channel):
                         minute=minute,
                         id=f"{entry_name}_cron",
                     )
-                    await log(
-                        self.channel_name,
+                    await self.log(
                         "info",
                         f"Scheduled '{entry_name}' every day at {everyday_at}.",
                     )
@@ -158,15 +156,14 @@ class ChannelSchedule(Channel):
                         minutes=every_n_minutes,
                         id=f"{entry_name}_interval",
                     )
-                    await log(
-                        self.channel_name,
+                    await self.log(
                         "info",
                         f"Scheduled '{entry_name}' every {every_n_minutes} min.",
                     )
 
         self.scheduler.start()
         msg = f"Scheduler started. session_id={self.session_id}"
-        await log(self.channel_name, "info", msg)
+        await self.log("info", msg)
         print(f"Channel {self.channel_name}: " + msg)
 
     async def _fire_prompt(self, dest_agent: str, message_text: str):
@@ -186,7 +183,7 @@ class ChannelSchedule(Channel):
             "to_": dest_agent,
             "body": body,
         }
-        await log(self.channel_name, "dump", f"Scheduled prompt: {body}")
+        await self.log("dump", f"Scheduled prompt: {body}")
         await self.handle_request_message(request)
 
     # ------------------------------------------------------------------
@@ -198,7 +195,7 @@ class ChannelSchedule(Channel):
         if body is None:
             return
 
-        await log(self.channel_name, "dump", f"Received response: {body}")
+        await self.log("dump", f"Received response: {body}")
 
         id_ = body.get("id", None)
 
@@ -214,7 +211,7 @@ class ChannelSchedule(Channel):
                 self.work_dir = os.path.abspath(".")
             self._initialized.set()
             msg = f"ACP initialization response received. cwd={self.work_dir}"
-            await log(self.channel_name, "info", msg)
+            await self.log("info", msg)
             print(f"Channel {self.channel_name}: " + msg)
             return
 
@@ -224,7 +221,7 @@ class ChannelSchedule(Channel):
             self.session_id = result.get("sessionId", None)
             self._session_ready.set()
             msg = f"Session ready. session_id={self.session_id}"
-            await log(self.channel_name, "info", msg)
+            await self.log("info", msg)
             print(f"Channel {self.channel_name}: " + msg)
             return
 
@@ -239,13 +236,9 @@ class ChannelSchedule(Channel):
                 if isinstance(content, list):
                     content = content[0] if content else {}
                 text = content.get("text", "")
-                await log(self.channel_name, "dump", f"Chunk discarded: {text!r}")
+                await self.log("dump", f"Chunk discarded: {text!r}")
             else:
-                await log(
-                    self.channel_name,
-                    "dump",
-                    f"Notification discarded: {session_update!r}",
-                )
+                await self.log("dump", f"Notification discarded: {session_update!r}")
             return
 
         # ---- Agent-initiated request (has id + method) -------------------
@@ -272,10 +265,8 @@ class ChannelSchedule(Channel):
                         }
                     },
                 }
-                await log(
-                    self.channel_name,
-                    "info",
-                    f"Auto-approved permission with '{chosen['optionId']}'",
+                await self.log(
+                    "info", f"Auto-approved permission with '{chosen['optionId']}'"
                 )
             else:
                 reply_body = {
@@ -283,8 +274,7 @@ class ChannelSchedule(Channel):
                     "id": id_,
                     "error": {"code": -32000, "message": "No allow option available"},
                 }
-                await log(
-                    self.channel_name,
+                await self.log(
                     "warning",
                     "No allow option in session/request_permission. Returning error.",
                 )
@@ -296,8 +286,7 @@ class ChannelSchedule(Channel):
         result = body.get("result", {})
         stop_reason = result.get("stopReason", "")
         if stop_reason:
-            await log(
-                self.channel_name,
+            await self.log(
                 "info",
                 f"Response complete (stopReason: {stop_reason}). Discarded.",
             )

@@ -7,7 +7,6 @@ from aiohttp.client_exceptions import ClientConnectorDNSError
 
 sys.path.append("../")
 from yaclaw.channel import Channel
-from yaclaw.log import log
 
 """
 Discord channel plugin for YaClaw.
@@ -45,7 +44,7 @@ _AUTO_FLUSH_DELAY = 5.0  # seconds after last chunk before auto-flushing
 class ChannelDiscord(Channel):
 
     async def initialize(self, channel_name, channel_settings):
-        await log(channel_name, "trace", f"Initializing...")
+        await self.log("trace", "Initializing...")
 
         intents = discord.Intents.default()
         intents.message_content = True
@@ -55,14 +54,14 @@ class ChannelDiscord(Channel):
         self.channel_id = self.channel_settings.get("channel_id", None)
         if self.channel_id is None:
             msg = "Discord channel ID not specified in settings. Aborting..."
-            await log(self.channel_name, "error", msg)
+            await self.log("error", msg)
             print(f"Channel {self.channel_name}: " + msg)
             return False
 
         self.bot_token = self.channel_settings.get("bot_token", None)
         if self.bot_token is None:
             msg = "Discord bot token not specified in settings. Aborting..."
-            await log(self.channel_name, "error", msg)
+            await self.log("error", msg)
             print(f"Channel {self.channel_name}: " + msg)
             return False
 
@@ -87,7 +86,10 @@ class ChannelDiscord(Channel):
         # Auto-flush timer task (cancelled and recreated on each chunk)
         self._flush_task: asyncio.Task | None = None
 
-        await log(self.channel_name, "trace", "Initialized.")
+        # Last `sessionUpdate` value, for detecting change of chunk type
+        self.last_session_update = None
+
+        await self.log("trace", "Initialized.")
         return True
 
     # ------------------------------------------------------------------
@@ -95,7 +97,7 @@ class ChannelDiscord(Channel):
     # ------------------------------------------------------------------
 
     async def start_listener(self):
-        await log(self.channel_name, "trace", "Starting listener...")
+        await self.log("trace", "Starting listener...")
         async with asyncio.TaskGroup() as tg:
             tg.create_task(self._acp_init_task())
             tg.create_task(self._discord_task())
@@ -116,7 +118,7 @@ class ChannelDiscord(Channel):
                 },
             },
         }
-        await log(self.channel_name, "dump", f"ACP initialize request: {body}")
+        await self.log("dump", f"ACP initialize request: {body}")
         await self.handle_request_message(body)
 
         # Block until handle_response_message() processes the initialize response
@@ -130,7 +132,7 @@ class ChannelDiscord(Channel):
             "method": "session/new",
             "params": {"cwd": self.work_dir, "mcpServers": []},
         }
-        await log(self.channel_name, "dump", f"New session request: {body}")
+        await self.log("dump", f"New session request: {body}")
         await self.handle_request_message(body)
         # _session_ready is set by handle_response_message() after session/new succeeds.
 
@@ -140,7 +142,7 @@ class ChannelDiscord(Channel):
         @self.client.event
         async def on_ready():
             msg = f"Discord user {self.client.user} has logged in"
-            await log(self.channel_name, "info", msg)
+            await self.log("info", msg)
             print(f"Channel {self.channel_name}: " + msg)
 
         @self.client.event
@@ -177,11 +179,7 @@ class ChannelDiscord(Channel):
                                 }
                             },
                         }
-                        await log(
-                            self.channel_name,
-                            "dump",
-                            f"Permission response: {body}",
-                        )
+                        await self.log("dump", f"Permission response: {body}")
                         await self.handle_request_message(body)
                     else:
                         ch = self.client.get_channel(self.channel_id)
@@ -206,14 +204,10 @@ class ChannelDiscord(Channel):
                     "prompt": [{"type": "text", "text": text}],
                 },
             }
-            await log(
-                self.channel_name,
-                "dump",
-                f"User message request: {body}",
-            )
+            await self.log("dump", f"User message request: {body}")
             await self.handle_request_message(body)
 
-        await log(self.channel_name, "trace", "Starting Discord client...")
+        await self.log("trace", "Starting Discord client...")
         try:
             await self.client.start(self.bot_token)
         except ClientConnectorDNSError as e:
@@ -231,7 +225,7 @@ class ChannelDiscord(Channel):
         if body is None:
             return
 
-        await log(self.channel_name, "dump", f"Received response: {body}")
+        await self.log("dump", f"Received response: {body}")
 
         id_ = body.get("id", None)
 
@@ -247,7 +241,7 @@ class ChannelDiscord(Channel):
                 self.work_dir = os.path.abspath(".")
             self._initialized.set()
             msg = f"ACP initialization response received. cwd={self.work_dir}"
-            await log(self.channel_name, "info", msg)
+            await self.log("info", msg)
             print(f"Channel {self.channel_name}: " + msg)
             return
 
@@ -257,7 +251,7 @@ class ChannelDiscord(Channel):
             self.session_id = result.get("sessionId", None)
             self._session_ready.set()
             msg = f"Session ready. session_id={self.session_id}"
-            await log(self.channel_name, "info", msg)
+            await self.log("info", msg)
             print(f"Channel {self.channel_name}: " + msg)
             return
 
@@ -267,15 +261,26 @@ class ChannelDiscord(Channel):
             params = body.get("params", {})
             update = params.get("update", {})
             session_update = update.get("sessionUpdate", "")
-            if session_update.endswith("_chunk"):
-                content = update.get("content", {})
-                if isinstance(content, list):
-                    content = content[0] if content else {}
-                text = content.get("text", "")
+            # self.last_session_update is used to detect when the type of chunk changes, so we can add separators or icons in the Discord message for better readability.
+            content = update.get("content", {})
+            if isinstance(content, list):
+                content = content[0] if content else {}
+            text = content.get("text", None)
+            if session_update == "agent_message_chunk":
                 if text:
+                    if self.last_session_update != "agent_message_chunk":
+                        await self._flush_chunk()
+                        text = "🗨️ " + text
+                    await self._append_chunk(text)
+            elif session_update == "agent_thought_chunk":
+                if text:
+                    if self.last_session_update != "agent_thought_chunk":
+                        await self._flush_chunk()
+                        text = "💭 " + text
                     await self._append_chunk(text)
             # Other notification types (session_info_update, plan, …) are
             # intentionally ignored in this basic implementation.
+            self.last_session_update = session_update
             return
 
         # ---- Agent-initiated request (has id + method) -------------------
@@ -307,7 +312,7 @@ class ChannelDiscord(Channel):
         if stop_reason:
             await self._flush_chunk()
             msg = f"Response complete (stopReason: {stop_reason})"
-            await log(self.channel_name, "info", msg)
+            await self.log("info", msg)
             print(f"Channel {self.channel_name}: " + msg)
 
     # ------------------------------------------------------------------
@@ -324,10 +329,8 @@ class ChannelDiscord(Channel):
         """Append *text* to the current in-progress Discord message."""
         ch = await self._get_discord_channel()
         if ch is None:
-            await log(
-                self.channel_name,
-                "warning",
-                f"Could not find Discord channel {self.channel_id}.",
+            await self.log(
+                "warning", f"Could not find Discord channel {self.channel_id}."
             )
             return
 
@@ -371,9 +374,7 @@ class ChannelDiscord(Channel):
         """Wait _AUTO_FLUSH_DELAY seconds, then flush. Cancelled if another chunk arrives."""
         try:
             await asyncio.sleep(_AUTO_FLUSH_DELAY)
-            await log(
-                self.channel_name, "trace", "Auto-flush triggered after inactivity."
-            )
+            await self.log("trace", "Auto-flush triggered after inactivity.")
             await self._flush_chunk()
         except asyncio.CancelledError:
             pass
@@ -392,19 +393,20 @@ class ChannelDiscord(Channel):
         self._current_body = ""
         self._current_discord_msg = None
         self._last_edit_time = 0.0
+        self.last_session_update = None
 
     # ------------------------------------------------------------------
     # stop / finalize
     # ------------------------------------------------------------------
 
     async def stop(self):
-        await log(self.channel_name, "trace", "Stopping...")
+        await self.log("trace", "Stopping...")
         if self.client.is_closed():
-            await log(self.channel_name, "warning", "Already closed.")
+            await self.log("warning", "Already closed.")
         else:
             await self.client.close()
-            await log(self.channel_name, "trace", "Closed.")
-        await log(self.channel_name, "trace", "Stopped.")
+            await self.log("trace", "Closed.")
+        await self.log("trace", "Stopped.")
 
     async def finalize(self):
-        await log(self.channel_name, "trace", f"Channel has been finalized.")
+        await self.log("trace", "Channel has been finalized.")

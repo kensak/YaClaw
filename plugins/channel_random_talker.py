@@ -4,7 +4,6 @@ import asyncio
 
 sys.path.append("../")
 from yaclaw.channel import Channel
-from yaclaw.log import log
 
 """
 Random talker channel plugin for YaClaw.
@@ -41,10 +40,7 @@ class ChannelRandomTalker(Channel):
                 },
             },
         }
-        await log(
-            "channel_random_talker_dump",
-            f"Channel {self.channel_name}: ACP initialize request: {body}",
-        )
+        await self.log("dump", f"ACP initialize request: {body}")
         await self.handle_request_message(body)
 
         # new session
@@ -55,10 +51,7 @@ class ChannelRandomTalker(Channel):
             "method": "session/new",
             "params": {"cwd": "/", "mcpServers": []},
         }
-        await log(
-            "channel_random_talker_dump",
-            f"Channel {self.channel_name}: New session request: {body}",
-        )
+        await self.log("dump", f"New session request: {body}")
         await self.handle_request_message(body)
 
         # random talker loop
@@ -86,43 +79,37 @@ class ChannelRandomTalker(Channel):
                     },
                 }
             print(f"{self.channel_name} request ID {self.num_method_calls}: {message}")
-            await log(
-                "channel_random_talker_dump",
-                f"Channel {self.channel_name}: User message request: {body}",
-            )
+            await self.log("dump", f"User message request: {body}")
             await self.handle_request_message(body)
 
     async def handle_response_message(self, response):
         body = response.get("body", None)
-        await log(
-            "channel_random_talker_dump",
-            f"Channel {self.channel_name}: Received response: {body}",
-        )
+        await self.log("dump", f"Received response: {body}")
         id_ = body.get("id", None)
         if id_ == 1:
-            msg = f"Channel {self.channel_name}: Initialization response received."
-            await log("channel_random_talker", msg)
-            print(msg)
+            msg = "Initialization response received."
+            await self.log("info", msg)
+            print(f"Channel {self.channel_name}: " + msg)
         elif id_ == 2:
             result = body.get("result", {})
             self.session_id = result.get("sessionId", None)
-            msg = f"Channel {self.channel_name}: New session response received. session ID: {self.session_id}"
-            await log("channel_random_talker", msg)
-            print(msg)
+            msg = f"New session response received. session ID: {self.session_id}"
+            await self.log("info", msg)
+            print(f"Channel {self.channel_name}: " + msg)
         elif id_ is None:
             params = body.get("params", {})
             update = params.get("update", {})
             content = update.get("content", {})
             text = content.get("text", "")
-            msg = f"{self.channel_name} update: {text}"
-            await log("channel_random_talker", msg)
-            print(msg)
+            msg = f"Update: {text}"
+            await self.log("info", msg)
+            print(f"Channel {self.channel_name}: " + msg)
         else:
             result = body.get("result", {})
             stop_reason = result.get("stopReason", "")
-            msg = f"Channel {self.channel_name}: response ID {id_}: {stop_reason}"
-            await log("channel_random_talker", msg)
-            print(msg)
+            msg = f"response ID {id_}: {stop_reason}"
+            await self.log("info", msg)
+            print(f"Channel {self.channel_name}: " + msg)
 
     async def stop(self):
         self.shutdown = True

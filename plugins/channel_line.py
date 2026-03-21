@@ -79,19 +79,19 @@ _MAX_MESSAGES = 5  # max messages per reply
 class ChannelLine(Channel):
 
     async def initialize(self, channel_name, channel_settings):
-        await log("trace", f"LINE channel {self.channel_name}: Initializing...")
+        await self.log("trace", "Initializing...")
 
         self.channel_access_token = channel_settings.get("channel_access_token", None)
         if self.channel_access_token is None:
-            msg = f"Channel {self.channel_name}: LINE channel access token not specified in settings. Aborting..."
-            await log("error", msg)
+            msg = "LINE channel access token not specified in settings. Aborting..."
+            await self.log("error", msg)
             print(msg)
             return False
 
         self.channel_secret = channel_settings.get("channel_secret", None)
         if self.channel_secret is None:
-            msg = f"Channel {self.channel_name}: LINE channel secret not specified in settings. Aborting..."
-            await log("error", msg)
+            msg = "LINE channel secret not specified in settings. Aborting..."
+            await self.log("error", msg)
             print(msg)
             return False
 
@@ -128,7 +128,7 @@ class ChannelLine(Channel):
         self._stop_event = asyncio.Event()
         self._runner = None
 
-        await log("trace", f"LINE channel {self.channel_name}: Initialized.")
+        await self.log("trace", "Initialized.")
         return True
 
     # ------------------------------------------------------------------
@@ -136,7 +136,7 @@ class ChannelLine(Channel):
     # ------------------------------------------------------------------
 
     async def start_listener(self):
-        await log("trace", f"LINE channel {self.channel_name}: Starting listener...")
+        await self.log("trace", "Starting listener...")
         async with asyncio.TaskGroup() as tg:
             tg.create_task(self._acp_init_task())
             tg.create_task(self._webhook_task())
@@ -157,10 +157,7 @@ class ChannelLine(Channel):
                 },
             },
         }
-        await log(
-            "channel_line_dump",
-            f"Channel {self.channel_name}: ACP initialize request: {body}",
-        )
+        await self.log("dump", f"ACP initialize request: {body}")
         await self.handle_request_message(body)
 
         # Block until handle_response_message() processes the initialize response
@@ -174,10 +171,7 @@ class ChannelLine(Channel):
             "method": "session/new",
             "params": {"cwd": self.work_dir, "mcpServers": []},
         }
-        await log(
-            "channel_line_dump",
-            f"Channel {self.channel_name}: New session request: {body}",
-        )
+        await self.log("dump", f"New session request: {body}")
         await self.handle_request_message(body)
         # _session_ready is set by handle_response_message() after session/new succeeds.
 
@@ -188,21 +182,15 @@ class ChannelLine(Channel):
             signature = request.headers.get("X-Line-Signature", "")
             body = await request.text()
 
-            await log("trace", f"LINE channel {self.channel_name}: Webhook received.")
+            await self.log("trace", f"Webhook received.")
 
             try:
                 events = self.parser.parse(body, signature)
             except InvalidSignatureError:
-                await log(
-                    "warning",
-                    f"LINE channel {self.channel_name}: Invalid signature. Rejecting request.",
-                )
+                await self.log("warning", "Invalid signature. Rejecting request.")
                 return web.Response(status=400, text="Invalid signature")
             except Exception as e:
-                await log(
-                    "error",
-                    f"LINE channel {self.channel_name}: Failed to parse webhook body: {e}",
-                )
+                await self.log("error", f"Failed to parse webhook body: {e}")
                 return web.Response(status=400, text="Bad request")
 
             for event in events:
@@ -224,9 +212,8 @@ class ChannelLine(Channel):
                         source_id = None
 
                     if source_id != self.target_id:
-                        await log(
+                        await self.log(
                             "trace",
-                            f"LINE channel {self.channel_name}: "
                             f"Message from '{source_id}' filtered out (target_id={self.target_id}).",
                         )
                         continue
@@ -239,10 +226,7 @@ class ChannelLine(Channel):
                     else None
                 )
 
-                await log(
-                    "info",
-                    f"LINE channel {self.channel_name}: Received message: {event.message.text}",
-                )
+                await self.log("info", f"Received message: {event.message.text}")
 
                 # Gate: wait until ACP session is ready before forwarding
                 await self._session_ready.wait()
@@ -257,10 +241,7 @@ class ChannelLine(Channel):
                         "prompt": [{"type": "text", "text": event.message.text}],
                     },
                 }
-                await log(
-                    "channel_line_dump",
-                    f"Channel {self.channel_name}: User message request: {acp_body}",
-                )
+                await self.log("dump", f"User message request: {acp_body}")
                 await self.handle_request_message(acp_body)
 
                 # Show loading animation immediately after forwarding the prompt
@@ -270,9 +251,8 @@ class ChannelLine(Channel):
                             ShowLoadingAnimationRequest(chat_id=self.current_user_id)
                         )
                     except Exception as e:
-                        await log(
+                        await self.log(
                             "trace",
-                            f"LINE channel {self.channel_name}: "
                             f"Loading animation not sent (may be unsupported in this context): {e}",
                         )
 
@@ -290,7 +270,7 @@ class ChannelLine(Channel):
             f"Channel {self.channel_name}: "
             f"LINE webhook server listening on {self.host}:{self.port}{self.webhook_path}"
         )
-        await log("info", msg)
+        await self.log("info", msg)
         print(msg)
 
         # Block here until stop() is called
@@ -305,10 +285,7 @@ class ChannelLine(Channel):
         if body is None:
             return
 
-        await log(
-            "channel_line_dump",
-            f"Channel {self.channel_name}: Received response: {body}",
-        )
+        await self.log("channel_line_dump", f"Received response: {body}")
 
         id_ = body.get("id", None)
 
@@ -323,9 +300,9 @@ class ChannelLine(Channel):
             except Exception:
                 self.work_dir = os.path.abspath(".")
             self._initialized.set()
-            msg = f"Channel {self.channel_name}: ACP initialization response received. cwd={self.work_dir}"
-            await log("info", msg)
-            print(msg)
+            msg = f"ACP initialization response received. cwd={self.work_dir}"
+            await self.log("info", msg)
+            print(f"Channel {self.channel_name}: " + msg)
             return
 
         if self._init_state == "before_session_new":
@@ -333,9 +310,9 @@ class ChannelLine(Channel):
             result = body.get("result", {})
             self.session_id = result.get("sessionId", None)
             self._session_ready.set()
-            msg = f"Channel {self.channel_name}: Session ready. session_id={self.session_id}"
-            await log("info", msg)
-            print(msg)
+            msg = f"Session ready. session_id={self.session_id}"
+            await self.log("info", msg)
+            print(f"Channel {self.channel_name}: " + msg)
             return
 
         # ---- Notification (no id) ----------------------------------------
@@ -351,9 +328,9 @@ class ChannelLine(Channel):
                 text = content.get("text", "")
                 if text:
                     self._current_body += text
-                    await log(
-                        "channel_line_dump",
-                        f"Channel {self.channel_name}: Chunk accumulated ({len(self._current_body)} chars total)",
+                    await self.log(
+                        "dump",
+                        f"Chunk accumulated ({len(self._current_body)} chars total)",
                     )
             # Other notification types (session_info_update, plan, …) are
             # intentionally ignored in this basic implementation.
@@ -384,9 +361,9 @@ class ChannelLine(Channel):
                         }
                     },
                 }
-                await log(
-                    "channel_line_dump",
-                    f"Channel {self.channel_name}: Auto-approved permission request with '{chosen['optionId']}'",
+                await self.log(
+                    "dump",
+                    f"Auto-approved permission request with '{chosen['optionId']}'",
                 )
             else:
                 reply_body = {
@@ -394,9 +371,9 @@ class ChannelLine(Channel):
                     "id": id_,
                     "error": {"code": -32000, "message": "No allow option available"},
                 }
-                await log(
+                await self.log(
                     "warning",
-                    f"Channel {self.channel_name}: No allow option in session/request_permission. Returning error.",
+                    "No allow option in session/request_permission. Returning error.",
                 )
             await self.handle_request_message(reply_body)
             return
@@ -407,9 +384,9 @@ class ChannelLine(Channel):
         stop_reason = result.get("stopReason", "")
         if stop_reason:
             await self._send_accumulated()
-            msg = f"Channel {self.channel_name}: Response complete (stopReason: {stop_reason})"
-            await log("info", msg)
-            print(msg)
+            msg = f"Response complete (stopReason: {stop_reason})"
+            await self.log("info", msg)
+            print(f"Channel {self.channel_name}: " + msg)
 
     # ------------------------------------------------------------------
     # _send_accumulated — send buffered chunks via LINE Reply API
@@ -421,17 +398,13 @@ class ChannelLine(Channel):
         self._current_body = ""
 
         if not text:
-            await log(
-                "trace",
-                f"LINE channel {self.channel_name}: No accumulated text to send.",
-            )
+            await self.log("trace", "No accumulated text to send.")
             return
 
         reply_token = self.current_reply_token
         if reply_token is None:
-            await log(
+            await self.log(
                 "warning",
-                f"LINE channel {self.channel_name}: "
                 "No reply token available. The token may have already been used or expired (>30 s). "
                 "Response will be discarded.",
             )
@@ -446,9 +419,8 @@ class ChannelLine(Channel):
             remaining = remaining[_MAX_MSG_LEN:]
 
         if remaining:
-            await log(
+            await self.log(
                 "warning",
-                f"LINE channel {self.channel_name}: "
                 f"Response exceeded {_MAX_MESSAGES * _MAX_MSG_LEN} chars and was truncated.",
             )
 
@@ -457,16 +429,14 @@ class ChannelLine(Channel):
                 ReplyMessageRequest(reply_token=reply_token, messages=messages)
             )
         except Exception as e:
-            await log(
-                "error", f"LINE channel {self.channel_name}: Failed to send reply: {e}"
-            )
+            await self.log("error", f"Failed to send reply: {e}")
 
     # ------------------------------------------------------------------
     # stop / finalize
     # ------------------------------------------------------------------
 
     async def stop(self):
-        await log("trace", f"LINE channel {self.channel_name}: Stopping...")
+        await self.log("trace", "Stopping...")
         self._stop_event.set()
 
     async def finalize(self):
@@ -474,4 +444,4 @@ class ChannelLine(Channel):
             await self._runner.cleanup()
             self._runner = None
         await self.api_client.close()
-        await log("trace", f"LINE channel {self.channel_name} has been finalized.")
+        await self.log("trace", "LINE channel has been finalized.")

@@ -2,7 +2,6 @@ import sys
 
 sys.path.append("../")
 from yaclaw.agent import Agent
-from yaclaw.log import log
 
 """
 Echo agent plugin for YaClaw.
@@ -19,11 +18,11 @@ class HandlerEcho(Agent):
         return True
 
     async def start_handler(self):
-        await log("trace", f"Agent {self.agent_name}: Starting Echo...")
+        await self.log("trace", f"Agent {self.agent_name}: Starting Echo...")
 
     async def handle_request_message(self, request):
         body = request["body"]
-        await log(
+        await self.log(
             "agent_echo_dump",
             f"Agent {self.agent_name}: Received request: {body}",
         )
@@ -41,7 +40,7 @@ class HandlerEcho(Agent):
                     pass
             forwarding = await self.create_response_skeleton(request)
             forwarding["body"] = forwarding_body
-            await log(
+            await self.log(
                 "agent_echo_dump",
                 f"Agent {self.agent_name}: Forwarding message: {forwarding_body}",
             )
@@ -102,7 +101,7 @@ class HandlerEcho(Agent):
                 },
             }
             response["body"] = resp_body
-            await log(
+            await self.log(
                 "agent_echo_dump",
                 f"Agent {self.agent_name}: Sending update: {resp_body}",
             )
@@ -125,7 +124,7 @@ class HandlerEcho(Agent):
                 },
             }
         response["body"] = resp_body
-        await log(
+        await self.log(
             "agent_echo_dump",
             f"Agent {self.agent_name}: Sending response: {resp_body}",
         )
