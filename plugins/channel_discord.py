@@ -31,9 +31,11 @@ Incremental chunk display:
   and a new one is started.
 
 Permission requests:
-  When the agent sends session/request_permission, the options are posted to
-  Discord and _wait_permission_mode is set.  The user's next integer reply is
-  forwarded as the ACP outcome.
+  When the agent sends session/request_permission, a PermissionView with
+  discord.ui.Button options is posted to Discord.  Button style is determined
+  by the ACP PermissionOptionKind: allow_once/allow_always → Danger (red),
+  reject_once/reject_always → Secondary (grey).  The view times out after
+  180 seconds.
 
 Typing indicator:
   While the agent is processing a session/prompt request, _typing_loop() sends
@@ -45,6 +47,58 @@ Typing indicator:
 _CHUNK_MAX = 1990  # leave headroom below Discord's 2000-char hard limit
 _EDIT_INTERVAL = 1.5  # minimum seconds between message edits
 _AUTO_FLUSH_DELAY = 5.0  # seconds after last chunk before auto-flushing
+
+# ACP PermissionOptionKind values that represent an allow action.
+_ALLOW_KINDS = {"allow_once", "allow_always"}
+
+
+class PermissionView(discord.ui.View):
+    """A discord.ui.View that presents ACP permission options as buttons.
+
+    Button style is determined by the ACP ``kind`` field:
+      allow_once / allow_always  → ButtonStyle.danger  (red)
+      reject_once / reject_always → ButtonStyle.secondary (grey)
+
+    After any button is pressed all buttons are disabled and the message
+    is edited in-place.  The same happens on timeout (180 s).
+    """
+
+    def __init__(self, options: list, on_select):
+        super().__init__(timeout=180)
+        self.message: discord.Message | None = None
+        self._on_select = on_select
+        for opt in options:
+            kind = opt.get("kind", "")
+            style = (
+                discord.ButtonStyle.danger
+                if kind in _ALLOW_KINDS
+                else discord.ButtonStyle.secondary
+            )
+            button = discord.ui.Button(
+                label=opt["name"],
+                style=style,
+                custom_id=opt["optionId"],
+            )
+            button.callback = self._make_callback(opt["optionId"])
+            self.add_item(button)
+
+    def _make_callback(self, option_id: str):
+        async def callback(interaction: discord.Interaction):
+            for child in self.children:
+                child.disabled = True
+            await interaction.response.edit_message(view=self)
+            await self._on_select(option_id)
+
+        return callback
+
+    async def on_timeout(self):
+        for child in self.children:
+            child.disabled = True
+        if self.message is not None:
+            try:
+                await self.message.edit(view=self)
+            except Exception:
+                pass
 
 
 class ChannelDiscord(Channel):
@@ -83,11 +137,6 @@ class ChannelDiscord(Channel):
         self._current_body: str = ""
         self._current_discord_msg: discord.Message | None = None
         self._last_edit_time: float = 0.0
-
-        # Permission request state
-        self._wait_permission_mode: bool = False
-        self._wait_permission_id = None
-        self._wait_permission_options: list = []
 
         # Auto-flush timer task (cancelled and recreated on each chunk)
         self._flush_task: asyncio.Task | None = None
@@ -174,36 +223,6 @@ class ChannelDiscord(Channel):
 
             text = message.content.strip()
             if not text:
-                return
-
-            # --- permission-response mode ---
-            if self._wait_permission_mode:
-                try:
-                    index = int(text) - 1
-                    if 0 <= index < len(self._wait_permission_options):
-                        self._wait_permission_mode = False
-                        body = {
-                            "jsonrpc": "2.0",
-                            "id": self._wait_permission_id,
-                            "result": {
-                                "outcome": {
-                                    "outcome": "selected",
-                                    "optionId": self._wait_permission_options[index][
-                                        "optionId"
-                                    ],
-                                }
-                            },
-                        }
-                        await self.log("dump", f"Permission response: {body}")
-                        await self.handle_request_message(body)
-                    else:
-                        ch = self.client.get_channel(self.channel_id)
-                        if ch:
-                            await ch.send(
-                                f"Invalid option. Please enter 1–{len(self._wait_permission_options)}."
-                            )
-                except ValueError:
-                    pass
                 return
 
             # --- regular prompt ---
@@ -314,22 +333,32 @@ class ChannelDiscord(Channel):
 
         method = body.get("method", "")
         if method == "session/request_permission":
+            if self._typing_task is not None:
+                self._typing_task.cancel()
+                self._typing_task = None
             params = body.get("params", {})
             tool_call = params.get("toolCall", {})
             tool_call_id = tool_call.get("toolCallId", "")
             options = params.get("options", [])
-            lines = [f"Agent requests permission for tool call `{tool_call_id}`:"]
-            for i, opt in enumerate(options):
-                lines.append(f"{i + 1}: {opt['name']}")
-            lines.append("Enter option number:")
+
+            async def on_select(option_id: str):
+                acp_response = {
+                    "jsonrpc": "2.0",
+                    "id": id_,
+                    "result": {"outcome": {"outcome": "selected", "optionId": option_id}},
+                }
+                await self.log("dump", f"Permission response: {acp_response}")
+                await self.handle_request_message(acp_response)
+
+            view = PermissionView(options, on_select)
             ch = self.client.get_channel(self.channel_id)
             if ch is None:
                 ch = await self.client.fetch_channel(self.channel_id)
             if ch:
-                await ch.send("\n".join(lines))
-            self._wait_permission_id = id_
-            self._wait_permission_options = options
-            self._wait_permission_mode = True
+                view.message = await ch.send(
+                    f"Agent requests permission for tool call `{tool_call_id}`:",
+                    view=view,
+                )
             return
 
         # ---- Method response (session/prompt complete, etc.) -------------
