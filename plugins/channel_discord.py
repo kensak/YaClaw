@@ -34,6 +34,12 @@ Permission requests:
   When the agent sends session/request_permission, the options are posted to
   Discord and _wait_permission_mode is set.  The user's next integer reply is
   forwarded as the ACP outcome.
+
+Typing indicator:
+  While the agent is processing a session/prompt request, _typing_loop() sends
+  a typing indicator every 5 seconds.  It is cancelled when stopReason arrives,
+  or after 120 seconds as a safety timeout.  New messages are ignored while
+  _is_processing is True.
 """
 
 _CHUNK_MAX = 1990  # leave headroom below Discord's 2000-char hard limit
@@ -84,6 +90,10 @@ class ChannelDiscord(Channel):
 
         # Auto-flush timer task (cancelled and recreated on each chunk)
         self._flush_task: asyncio.Task | None = None
+
+        # Typing indicator task
+        self._typing_task: asyncio.Task | None = None
+        self._is_processing: bool = False
 
         # Last `sessionUpdate` value, for detecting change of chunk type
         self.last_session_update = None
@@ -196,7 +206,15 @@ class ChannelDiscord(Channel):
                 return
 
             # --- regular prompt ---
+            if self._is_processing:
+                return
+
             await self._session_ready.wait()
+
+            self._is_processing = True
+            self._typing_task = asyncio.get_event_loop().create_task(
+                self._typing_loop(message.channel)
+            )
 
             self.num_method_calls += 1
             body = {
@@ -318,6 +336,10 @@ class ChannelDiscord(Channel):
         result = body.get("result", {})
         stop_reason = result.get("stopReason", "")
         if stop_reason:
+            if self._typing_task is not None:
+                self._typing_task.cancel()
+                self._typing_task = None
+            self._is_processing = False
             await self._flush_chunk()
             msg = f"Response complete (stopReason: {stop_reason})"
             await self.log("info", msg)
@@ -326,6 +348,22 @@ class ChannelDiscord(Channel):
     # ------------------------------------------------------------------
     # Incremental chunk helpers
     # ------------------------------------------------------------------
+
+    async def _typing_loop(self, ch) -> None:
+        """Send typing indicator to *ch* every 5 s until cancelled or 30 s timeout."""
+        deadline = asyncio.get_event_loop().time() + 30
+        try:
+            while asyncio.get_event_loop().time() < deadline:
+                if ch is not None:
+                    try:
+                        await ch.typing()
+                    except Exception:
+                        pass
+                await asyncio.sleep(5)
+        except asyncio.CancelledError:
+            pass
+        finally:
+            self._is_processing = False
 
     async def _get_discord_channel(self):
         ch = self.client.get_channel(self.channel_id)
