@@ -32,7 +32,7 @@ class ChannelTerminal(Channel):
             print(f"Channel {self.channel_name}: " + msg)
             return False
         ChannelTerminal.num_instance = 1
-        self.init_state = "before_init"
+        # self.init_state = "before_init"
         self._initialized = asyncio.Event()
         self._wait_response = asyncio.Event()
         self.num_method_calls = 0
@@ -57,6 +57,10 @@ class ChannelTerminal(Channel):
             "method": "initialize",
             "params": {
                 "protocolVersion": 1,
+                "clientCapabilities": {
+                    "fs": {"readTextFile": False, "writeTextFile": False},
+                    "terminal": False,
+                },
                 "clientInfo": {
                     "name": self.channel_name,
                     "title": self.channel_name,
@@ -77,16 +81,19 @@ class ChannelTerminal(Channel):
             "params": {"cwd": self.work_dir, "mcpServers": []},
         }
         await self.log("dump", f"New session request: {body}")
+        self._wait_response.clear()
         await self.handle_request_message(body)
 
         print("-------------------")
         print("🖥 Terminal channel")
         print("-------------------")
 
-        await asyncio.sleep(2)
+        # await asyncio.sleep(2)
 
         # terminal loop
         while not self.shutdown:
+            await self._wait_response.wait()
+
             message = await ChannelTerminal.async_input("\n> ")
             if message.strip() == "":
                 continue
@@ -127,9 +134,9 @@ class ChannelTerminal(Channel):
                         if self.cursor is not None:
                             body["params"]["cursor"] = self.cursor
                         await self.log("dump", f"Session list request: {body}")
+                        self._wait_response.clear()
                         await self.handle_request_message(body)
                         await self._wait_response.wait()
-                        self._wait_response.clear()
                         if self.cursor is None:
                             break
                     print(f"Total sessions: {len(self.sessions)}")
@@ -182,6 +189,7 @@ class ChannelTerminal(Channel):
                             },
                         }
                         await self.log("dump", f"Session load request: {body}")
+                        self._wait_response.clear()
                         await self.handle_request_message(body)
                     except ValueError:
                         print("Invalid input.")
@@ -227,6 +235,7 @@ class ChannelTerminal(Channel):
                             },
                         }
                         await self.log("dump", f"Mode set request: {body}")
+                        self._wait_response.clear()
                         await self.handle_request_message(body)
                     except ValueError:
                         print("Invalid input.")
@@ -272,6 +281,7 @@ class ChannelTerminal(Channel):
                             },
                         }
                         await self.log("dump", f"Model set request: {body}")
+                        self._wait_response.clear()
                         await self.handle_request_message(body)
                     except ValueError:
                         print("Invalid input.")
@@ -327,6 +337,7 @@ class ChannelTerminal(Channel):
                             },
                         }
                         await self.log("dump", f"Reasoning effort set request: {body}")
+                        self._wait_response.clear()
                         await self.handle_request_message(body)
                     except ValueError:
                         print("Invalid input.")
@@ -347,18 +358,22 @@ class ChannelTerminal(Channel):
                 },
             }
             await self.log("dump", f"User message request: {body}")
+            self._wait_response.clear()
             await self.handle_request_message(body)
-            await asyncio.sleep(2)
 
     async def handle_response_message(self, response):
         body = response.get("body", None)
         await self.log("dump", f"Received response: {body}")
         id_ = body.get("id", None)
-        if id_ is not None:
-            print(json.dumps(body, indent=2))
+        # print(json.dumps(body, indent=2))
 
-        if self.init_state == "before_init":  # initialize
-            self.init_state = "before_session_new"
+        if not self._initialized.is_set():  # initialize
+            if "error" in body:
+                error = body["error"]
+                msg = f"Initialization error ({error.get('code', '')}): {error.get('message', '')}, details: {error.get('data', {}).get('details', '')}"
+                print(f"Channel {self.channel_name}: " + msg)
+                raise Exception(msg)
+
             try:
                 self.work_dir = os.path.abspath(
                     body["result"]["_meta"]["yaclaw"]["cwd"]
@@ -379,15 +394,6 @@ class ChannelTerminal(Channel):
             msg = "Initialization response received."
             await self.log("info", msg)
             print(f"Channel {self.channel_name}: " + msg)
-
-        elif self.init_state == "before_session_new":  # session/new
-            self.init_state = "after_session_new"
-            result = body.get("result", {})
-            self.session_id = result.get("sessionId", None)
-            msg = f"New session response received. session ID: {self.session_id}"
-            await self.log("info", msg)
-            print(f"Channel {self.channel_name}: " + msg)
-            self.config_options = result.get("configOptions", [])
 
         elif id_ is None:  # notification or update
             params = body.get("params", {})
@@ -419,6 +425,12 @@ class ChannelTerminal(Channel):
                     print(
                         f"{(i+1):2d}: {entry['priority']:6s} {entry['status']:7s} {entry['content']}"
                     )
+            elif sessionUpdate == "config_option_update":
+                if "configOptions" in update:
+                    self.config_options = update["configOptions"]
+                    msg = "Received config option update."
+                    await self.log("info", msg)
+                    print(f"Channel {self.channel_name}: " + msg)
             else:
                 print(json.dumps(body, indent=2))
 
@@ -439,24 +451,32 @@ class ChannelTerminal(Channel):
                 print("Enter option number: ", end="", flush=True)
             else:  # method response
                 result = body.get("result", {})
-                if "sessions" in result:
+
+                if "configOptions" in result:
+                    self.config_options = result["configOptions"]
+                    msg = "Received config options."
+                    await self.log("info", msg)
+                    print(f"Channel {self.channel_name}: " + msg)
+
+                if "sessionId" in result:
+                    self.session_id = result["sessionId"]
+
+                if "stopReason" in result:
+                    stop_reason = result["stopReason"]
+                    msg = f"response ID {id_}: {stop_reason}"
+                    await self.log("info", msg)
+                    print("\n" + f"Channel {self.channel_name}: Stop reason: " + msg)
+
+                if "sessions" in result:  # session/list response
                     sessions = result["sessions"]
                     self.sessions.extend(sessions)
                     self.cursor = result.get("nextCursor", None)
                     msg = f"Received {len(sessions)} sessions. Cursor: {self.cursor}"
                     await self.log("info", msg)
                     print(f"Channel {self.channel_name}: " + msg)
-                    self._wait_response.set()
-                elif "configOptions" in result:
-                    self.config_options = result["configOptions"]
-                    msg = "Received config options."
-                    await self.log("info", msg)
-                    print(f"Channel {self.channel_name}: " + msg)
-                else:
-                    stop_reason = result.get("stopReason", "")
-                    msg = f"response ID {id_}: {stop_reason}"
-                    await self.log("info", msg)
-                    print("\n" + f"Channel {self.channel_name}: " + msg)
+
+        print("\n> ", end="", flush=True)
+        self._wait_response.set()
 
     async def stop(self):
         self.shutdown = True
