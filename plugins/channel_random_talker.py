@@ -19,6 +19,10 @@ class ChannelRandomTalker(Channel):
     lock = asyncio.Lock()
 
     async def initialize(self, channel_name, channel_settings):
+        # ACP protocol state
+        self._init_state = "before_init"
+        self._initialized = asyncio.Event()  # set after initialize response
+        self._session_ready = asyncio.Event()  # set after session/new response
         self.num_method_calls = 0
         self.session_id = None
         self.shutdown = False
@@ -26,22 +30,31 @@ class ChannelRandomTalker(Channel):
 
     async def start_listener(self):
         # initialize ACP connection
-        self.num_method_calls += 1
-        body = {
-            "jsonrpc": "2.0",
-            "id": self.num_method_calls,
-            "method": "initialize",
-            "params": {
-                "protocolVersion": 1,
-                "clientInfo": {
-                    "name": self.channel_name,
-                    "title": self.channel_name,
-                    "version": "1.0.0",
+        while True:
+            self.num_method_calls += 1
+            body = {
+                "jsonrpc": "2.0",
+                "id": self.num_method_calls,
+                "method": "initialize",
+                "params": {
+                    "protocolVersion": 1,
+                    "clientInfo": {
+                        "name": self.channel_name,
+                        "title": self.channel_name,
+                        "version": "1.0.0",
+                    },
                 },
-            },
-        }
-        await self.log("dump", f"ACP initialize request: {body}")
-        await self.handle_request_message(body)
+            }
+            await self.log("dump", f"ACP initialize request: {body}")
+            await self.handle_request_message(body)
+
+            # Block until handle_response_message() processes the initialize response.
+            await self._initialized.wait()
+
+            if self._init_state == "before_session_new":
+                break
+            self._initialized.clear()
+            self.num_method_calls = random.randint(700, 799)
 
         # new session
         self.num_method_calls += 1
@@ -84,19 +97,46 @@ class ChannelRandomTalker(Channel):
 
     async def handle_response_message(self, response):
         body = response.get("body", None)
+        if body is None:
+            return
+
         await self.log("dump", f"Received response: {body}")
+
         id_ = body.get("id", None)
-        if id_ == 1:
-            msg = "Initialization response received."
+
+        # ---- ACP handshake states ----------------------------------------
+
+        if self._init_state == "before_init":
+            if "error" in body:
+                error = body["error"]
+                code = error.get("code", "")
+                message = error.get("message", "")
+
+                if code != 7001:  #  7001: ID used.
+                    msg = f"Initialization error ({code}): {message}, details: {error.get('data', {}).get('details', '')}"
+                    print(f"Channel {self.channel_name}: " + msg)
+                    raise Exception(msg)
+            else:
+                self._init_state = "before_session_new"
+            self._initialized.set()
+            msg = "ACP initialization response received."
             await self.log("info", msg)
             print(f"Channel {self.channel_name}: " + msg)
-        elif id_ == 2:
+            return
+
+        elif self._init_state == "before_session_new":
+            self._init_state = "ready"
             result = body.get("result", {})
             self.session_id = result.get("sessionId", None)
-            msg = f"New session response received. session ID: {self.session_id}"
+            self._session_ready.set()
+            msg = f"Session ready. session_id={self.session_id}"
             await self.log("info", msg)
             print(f"Channel {self.channel_name}: " + msg)
-        elif id_ is None:
+            return
+
+        # ---- Notification (no id) ----------------------------------------
+
+        if id_ is None:
             params = body.get("params", {})
             update = params.get("update", {})
             content = update.get("content", {})
@@ -104,12 +144,16 @@ class ChannelRandomTalker(Channel):
             msg = f"Update: {text}"
             await self.log("info", msg)
             print(f"Channel {self.channel_name}: " + msg)
-        else:
-            result = body.get("result", {})
-            stop_reason = result.get("stopReason", "")
-            msg = f"response ID {id_}: {stop_reason}"
-            await self.log("info", msg)
-            print(f"Channel {self.channel_name}: " + msg)
+            return
+
+        # ---- Agent-initiated request (has id + method) -------------------
+        # ---- Method response (session/prompt complete, etc.) -------------
+
+        result = body.get("result", {})
+        stop_reason = result.get("stopReason", "")
+        msg = f"response ID {id_}: {stop_reason}"
+        await self.log("info", msg)
+        print(f"Channel {self.channel_name}: " + msg)
 
     async def stop(self):
         self.shutdown = True

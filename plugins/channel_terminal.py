@@ -1,8 +1,8 @@
-import os
 import sys
 import asyncio
 import json
 import datetime
+import random
 
 sys.path.append("../")
 from yaclaw.channel import Channel
@@ -32,8 +32,8 @@ class ChannelTerminal(Channel):
             print(f"Channel {self.channel_name}: " + msg)
             return False
         ChannelTerminal.num_instance = 1
-        # self.init_state = "before_init"
         self._initialized = asyncio.Event()
+        self.retry_initialization = True
         self._wait_response = asyncio.Event()
         self.num_method_calls = 0
         self.session_id = None
@@ -49,29 +49,34 @@ class ChannelTerminal(Channel):
 
     async def start_listener(self):
         # initialize ACP connection
-        self.num_method_calls += 1
-        body = {
-            "jsonrpc": "2.0",
-            "id": self.num_method_calls,
-            "method": "initialize",
-            "params": {
-                "protocolVersion": 1,
-                "clientCapabilities": {
-                    "fs": {"readTextFile": False, "writeTextFile": False},
-                    "terminal": False,
+        while True:
+            self.num_method_calls += 1
+            body = {
+                "jsonrpc": "2.0",
+                "id": self.num_method_calls,
+                "method": "initialize",
+                "params": {
+                    "protocolVersion": 1,
+                    "clientCapabilities": {
+                        "fs": {"readTextFile": False, "writeTextFile": False},
+                        "terminal": False,
+                    },
+                    "clientInfo": {
+                        "name": self.channel_name,
+                        "title": self.channel_name,
+                        "version": "1.0.0",
+                    },
                 },
-                "clientInfo": {
-                    "name": self.channel_name,
-                    "title": self.channel_name,
-                    "version": "1.0.0",
-                },
-            },
-        }
-        await self.log("dump", f"ACP initialize request: {body}")
-        await self.handle_request_message(body)
+            }
+            await self.log("dump", f"ACP initialize request: {body}")
+            await self.handle_request_message(body)
+            await self._initialized.wait()
+            if not self.retry_initialization:
+                break
+            self._initialized.clear()
+            self.num_method_calls = random.randint(400, 499)
 
         # new session
-        await self._initialized.wait()
         self.num_method_calls += 1
         # `cwd` will be overwritten on the agent's side by the agent's `work_dir` setting.
         body = {
@@ -370,18 +375,27 @@ class ChannelTerminal(Channel):
         if not self._initialized.is_set():  # initialize
             if "error" in body:
                 error = body["error"]
-                msg = f"Initialization error ({error.get('code', '')}): {error.get('message', '')}, details: {error.get('data', {}).get('details', '')}"
-                print(f"Channel {self.channel_name}: " + msg)
-                raise Exception(msg)
+                code = error.get("code", "")
+                message = error.get("message", "")
 
-            try:
-                agentCapabilities = body["result"]["agentCapabilities"]
-                if "list" in agentCapabilities.get("sessionCapabilities", {}):
-                    self.capabilities.append("session_list")
-                if agentCapabilities.get("loadSession", False):
-                    self.capabilities.append("session_load")
-            except Exception:
-                pass
+                if code == 7001 and message.startswith("ID used."):
+                    print(
+                        f"Channel {self.channel_name}: {message} Retrying initialization..."
+                    )
+                else:
+                    msg = f"Initialization error ({code}): {message}, details: {error.get('data', {}).get('details', '')}"
+                    print(f"Channel {self.channel_name}: " + msg)
+                    raise Exception(msg)
+            else:
+                self.retry_initialization = False
+                try:
+                    agentCapabilities = body["result"]["agentCapabilities"]
+                    if "list" in agentCapabilities.get("sessionCapabilities", {}):
+                        self.capabilities.append("session_list")
+                    if agentCapabilities.get("loadSession", False):
+                        self.capabilities.append("session_load")
+                except Exception:
+                    pass
 
             self._initialized.set()
             msg = "Initialization response received."

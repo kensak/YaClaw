@@ -1,7 +1,7 @@
-import os
 import sys
 import asyncio
 import time
+import random
 import discord
 from aiohttp.client_exceptions import ClientConnectorDNSError
 
@@ -102,26 +102,32 @@ class ChannelDiscord(Channel):
             tg.create_task(self._discord_task())
 
     async def _acp_init_task(self):
-        """Send ACP initialize, then session/new once the cwd is known."""
-        self.num_method_calls += 1
-        body = {
-            "jsonrpc": "2.0",
-            "id": self.num_method_calls,
-            "method": "initialize",
-            "params": {
-                "protocolVersion": 1,
-                "clientInfo": {
-                    "name": self.channel_name,
-                    "title": self.channel_name,
-                    "version": "1.0.0",
+        # ACP initialize
+        while True:
+            self.num_method_calls += 1
+            body = {
+                "jsonrpc": "2.0",
+                "id": self.num_method_calls,
+                "method": "initialize",
+                "params": {
+                    "protocolVersion": 1,
+                    "clientInfo": {
+                        "name": self.channel_name,
+                        "title": self.channel_name,
+                        "version": "1.0.0",
+                    },
                 },
-            },
-        }
-        await self.log("dump", f"ACP initialize request: {body}")
-        await self.handle_request_message(body)
+            }
+            await self.log("dump", f"ACP initialize request: {body}")
+            await self.handle_request_message(body)
 
-        # Block until handle_response_message() processes the initialize response.
-        await self._initialized.wait()
+            # Block until handle_response_message() processes the initialize response.
+            await self._initialized.wait()
+
+            if self._init_state == "before_session_new":
+                break
+            self._initialized.clear()
+            self.num_method_calls = random.randint(500, 599)
 
         self.num_method_calls += 1
         body = {
@@ -230,7 +236,17 @@ class ChannelDiscord(Channel):
         # ---- ACP handshake states ----------------------------------------
 
         if self._init_state == "before_init":
-            self._init_state = "before_session_new"
+            if "error" in body:
+                error = body["error"]
+                code = error.get("code", "")
+                message = error.get("message", "")
+
+                if code != 7001:  #  7001: ID used.
+                    msg = f"Initialization error ({code}): {message}, details: {error.get('data', {}).get('details', '')}"
+                    print(f"Channel {self.channel_name}: " + msg)
+                    raise Exception(msg)
+            else:
+                self._init_state = "before_session_new"
             self._initialized.set()
             msg = "ACP initialization response received."
             await self.log("info", msg)

@@ -357,7 +357,24 @@ class HandlerACP(Agent):
                 body["params"]["cwd"] = self.work_dir
 
             if method:
-                # Our request to the agent — save id → request for response routing.
+                # Our request to the agent
+
+                # Check if the same ID is used.
+                if id_ in self._id_map:
+                    body = {
+                        "jsonrpc": "2.0",
+                        "id": id_,
+                        "error": {
+                            "code": 7001,
+                            "message": "ID used. Retry later or use another ID.",
+                        },
+                    }
+                    response = await self.create_response_skeleton(request)
+                    response["body"] = body
+                    await self.handle_response_message(response)
+                    return
+
+                # save id → request for response routing.
                 self._id_map[id_] = request
 
             # If body has an id but no method, it is the channel's response to an

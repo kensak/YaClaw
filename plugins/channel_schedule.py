@@ -1,5 +1,5 @@
-import os
 import sys
+import random
 import asyncio
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from apscheduler.executors.asyncio import AsyncIOExecutor
@@ -79,30 +79,36 @@ class ChannelSchedule(Channel):
         print(f"Schedule Channel {self.channel_name}: Starting listener...")
 
         # ---- Step 1: ACP initialize ----
-        self.num_method_calls += 1
-        init_params = {
-            "protocolVersion": 1,
-            "clientInfo": {
-                "name": self.channel_name,
-                "title": self.channel_name,
-                "version": "1.0.0",
-            },
-        }
-        if self.forward_acp_chunks_to is not None:
-            init_params["_meta"] = {
-                "yaclaw": {"forward_acp_chunks_to": self.forward_acp_chunks_to}
+        while True:
+            self.num_method_calls += 1
+            init_params = {
+                "protocolVersion": 1,
+                "clientInfo": {
+                    "name": self.channel_name,
+                    "title": self.channel_name,
+                    "version": "1.0.0",
+                },
             }
-        body = {
-            "jsonrpc": "2.0",
-            "id": self.num_method_calls,
-            "method": "initialize",
-            "params": init_params,
-        }
-        await self.log("dump", f"ACP initialize request: {body}")
-        await self.handle_request_message(body)
+            if self.forward_acp_chunks_to is not None:
+                init_params["_meta"] = {
+                    "yaclaw": {"forward_acp_chunks_to": self.forward_acp_chunks_to}
+                }
+            body = {
+                "jsonrpc": "2.0",
+                "id": self.num_method_calls,
+                "method": "initialize",
+                "params": init_params,
+            }
+            await self.log("dump", f"ACP initialize request: {body}")
+            await self.handle_request_message(body)
 
-        # ---- Step 2: wait for initialize response (cwd resolved) ----
-        await self._initialized.wait()
+            # ---- Step 2: wait for initialize response (cwd resolved) ----
+            await self._initialized.wait()
+
+            if self._init_state == "before_session_new":
+                break
+            self._initialized.clear()
+            self.num_method_calls = random.randint(800, 899)
 
         # ---- Step 3: session/new ----
         self.num_method_calls += 1
@@ -201,7 +207,17 @@ class ChannelSchedule(Channel):
         # ---- ACP handshake states ----------------------------------------
 
         if self._init_state == "before_init":
-            self._init_state = "before_session_new"
+            if "error" in body:
+                error = body["error"]
+                code = error.get("code", "")
+                message = error.get("message", "")
+
+                if code != 7001:  #  7001: ID used.
+                    msg = f"Initialization error ({code}): {message}, details: {error.get('data', {}).get('details', '')}"
+                    print(f"Channel {self.channel_name}: " + msg)
+                    raise Exception(msg)
+            else:
+                self._init_state = "before_session_new"
             self._initialized.set()
             msg = "ACP initialization response received."
             await self.log("info", msg)
