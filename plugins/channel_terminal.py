@@ -38,7 +38,6 @@ class ChannelTerminal(Channel):
         self.num_method_calls = 0
         self.session_id = None
         self.shutdown = False
-        self.work_dir = None
         self.capabilities = []
         self.sessions = []
         self.config_options = []
@@ -74,11 +73,12 @@ class ChannelTerminal(Channel):
         # new session
         await self._initialized.wait()
         self.num_method_calls += 1
+        # `cwd` will be overwritten on the agent's side by the agent's `work_dir` setting.
         body = {
             "jsonrpc": "2.0",
             "id": self.num_method_calls,
             "method": "session/new",
-            "params": {"cwd": self.work_dir, "mcpServers": []},
+            "params": {"cwd": "/dummy/dir", "mcpServers": []},
         }
         await self.log("dump", f"New session request: {body}")
         self._wait_response.clear()
@@ -129,7 +129,7 @@ class ChannelTerminal(Channel):
                             "jsonrpc": "2.0",
                             "id": self.num_method_calls,
                             "method": "session/list",
-                            "params": {"cwd": self.work_dir},
+                            "params": {"cwd": "/dummy/dir"},
                         }
                         if self.cursor is not None:
                             body["params"]["cursor"] = self.cursor
@@ -184,7 +184,7 @@ class ChannelTerminal(Channel):
                             "method": "session/load",
                             "params": {
                                 "sessionId": self.session_id,
-                                "cwd": self.work_dir,
+                                "cwd": "/dummy/dir",
                                 "mcpServers": [],
                             },
                         }
@@ -373,13 +373,6 @@ class ChannelTerminal(Channel):
                 msg = f"Initialization error ({error.get('code', '')}): {error.get('message', '')}, details: {error.get('data', {}).get('details', '')}"
                 print(f"Channel {self.channel_name}: " + msg)
                 raise Exception(msg)
-
-            try:
-                self.work_dir = os.path.abspath(
-                    body["result"]["_meta"]["yaclaw"]["cwd"]
-                )
-            except Exception:
-                self.work_dir = os.path.abspath(".")
 
             try:
                 agentCapabilities = body["result"]["agentCapabilities"]

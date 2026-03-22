@@ -8,16 +8,16 @@ Responses and notifications received from stdout are forwarded back to the
 channel as-is.
 
 Supported agents (examples):
-  GitHub Copilot CLI : command="copilot"  args=["--acp", "--continue"]
+  GitHub Copilot CLI : command="copilot"  args=["--acp"]
   OpenAI Codex CLI   : command="npx"     args=["-y", "@zed-industries/codex-acp"]
-  OpenCode           : command="opencode" args=["acp", "-c"]
-  Gemini CLI         : command="gemini"   args=["--experimental-acp"]
+  OpenCode           : command="opencode" args=["acp"]
+  Gemini CLI         : command="gemini"   args=["--acp"]
 
 settings.json example:
   {
     "plugin": "agent_acp",
     "command": "opencode",
-    "args": ["acp", "-c"],
+    "args": ["acp"],
     "work_dir": "workspace/opencode",
     "env": {}
   }
@@ -219,11 +219,9 @@ class HandlerACP(Agent):
                 method = original_request.get("body", {}).get("method", "")
 
                 if "result" in obj:
-                    if method == "initialize":
-                        obj["result"]["_meta"] = {"yaclaw": {"cwd": self.work_dir}}
 
                     # Update _session_map only on successful responses.
-                    elif method == "session/new":
+                    if method == "session/new":
                         # A new session was created — register its sessionId.
                         new_sid = obj["result"].get("sessionId")
                         if new_sid:
@@ -350,13 +348,21 @@ class HandlerACP(Agent):
         body: dict = request.get("body", {})
         id_ = body.get("id")
         method = body.get("method", "")
+        params = body.get("params", {})
 
-        if id_ is not None and method:
-            # Our request to the agent — save id → request for response routing.
-            self._id_map[id_] = request
-        # If body has an id but no method, it is the channel's response to an
-        # agent-initiated request (e.g. session/request_permission).
-        # Just pass it through to stdin — no _id_map entry needed.
+        if id_ is not None:
+            if "cwd" in params:
+                # Override the cwd in the request with our `work_dir` setting.
+                # This is to prevent malicious channel plugin from setting an arbitrary cwd.
+                body["params"]["cwd"] = self.work_dir
+
+            if method:
+                # Our request to the agent — save id → request for response routing.
+                self._id_map[id_] = request
+
+            # If body has an id but no method, it is the channel's response to an
+            # agent-initiated request (e.g. session/request_permission).
+            # Just pass it through to stdin — no _id_map entry needed.
 
         if method == "initialize":
             # Set the forward_acp_chunks_to for the source channel if specified in the request's _meta.

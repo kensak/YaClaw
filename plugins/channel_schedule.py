@@ -64,7 +64,6 @@ class ChannelSchedule(Channel):
         self._session_ready = asyncio.Event()  # set after session/new response
         self.num_method_calls = 0
         self.session_id = None
-        self.work_dir = None
 
         # Optional: direct chunk forwarding hint for the agent
         self.forward_acp_chunks_to = channel_settings.get("forward_acp_chunks_to", None)
@@ -111,7 +110,7 @@ class ChannelSchedule(Channel):
             "jsonrpc": "2.0",
             "id": self.num_method_calls,
             "method": "session/new",
-            "params": {"cwd": self.work_dir, "mcpServers": []},
+            "params": {"cwd": "/dummy/dir", "mcpServers": []},
         }
         await self.log("dump", f"New session request: {body}")
         await self.handle_request_message(body)
@@ -203,14 +202,8 @@ class ChannelSchedule(Channel):
 
         if self._init_state == "before_init":
             self._init_state = "before_session_new"
-            try:
-                self.work_dir = os.path.abspath(
-                    body["result"]["_meta"]["yaclaw"]["cwd"]
-                )
-            except Exception:
-                self.work_dir = os.path.abspath(".")
             self._initialized.set()
-            msg = f"ACP initialization response received. cwd={self.work_dir}"
+            msg = "ACP initialization response received."
             await self.log("info", msg)
             print(f"Channel {self.channel_name}: " + msg)
             return

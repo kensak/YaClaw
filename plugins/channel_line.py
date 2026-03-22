@@ -120,7 +120,6 @@ class ChannelLine(Channel):
         self._session_ready = asyncio.Event()  # set after session/new response
         self.num_method_calls = 0
         self.session_id = None
-        self.work_dir = None
 
         # Chunk accumulation buffer
         self._current_body: str = ""
@@ -160,8 +159,7 @@ class ChannelLine(Channel):
         await self.log("dump", f"ACP initialize request: {body}")
         await self.handle_request_message(body)
 
-        # Block until handle_response_message() processes the initialize response
-        # and populates self.work_dir.
+        # Block until handle_response_message() processes the initialize response.
         await self._initialized.wait()
 
         self.num_method_calls += 1
@@ -169,7 +167,7 @@ class ChannelLine(Channel):
             "jsonrpc": "2.0",
             "id": self.num_method_calls,
             "method": "session/new",
-            "params": {"cwd": self.work_dir, "mcpServers": []},
+            "params": {"cwd": "/dummy/dir", "mcpServers": []},
         }
         await self.log("dump", f"New session request: {body}")
         await self.handle_request_message(body)
@@ -293,14 +291,8 @@ class ChannelLine(Channel):
 
         if self._init_state == "before_init":
             self._init_state = "before_session_new"
-            try:
-                self.work_dir = os.path.abspath(
-                    body["result"]["_meta"]["yaclaw"]["cwd"]
-                )
-            except Exception:
-                self.work_dir = os.path.abspath(".")
             self._initialized.set()
-            msg = f"ACP initialization response received. cwd={self.work_dir}"
+            msg = "ACP initialization response received."
             await self.log("info", msg)
             print(f"Channel {self.channel_name}: " + msg)
             return
