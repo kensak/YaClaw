@@ -42,6 +42,14 @@ Typing indicator:
   a typing indicator every 5 seconds.  It is cancelled when stopReason arrives,
   or after 120 seconds as a safety timeout.  New messages are ignored while
   _is_processing is True.
+
+/modes, /ai_models, /reasoning_efforts commands:
+  Each command posts a Discord Select menu (ConfigSelectView) for the
+  corresponding ACP configId ("mode", "model", "reasoning_effort").  The
+  current value is pre-selected.  Commands are visually distinguished by the
+  Select placeholder emoji (🎯 / 🤖 / 🧠).  Choosing an option sends
+  session/set_config_option to the agent.  The menu times out after 60 seconds.
+  All three commands are available even while _is_processing is True.
 """
 
 _CHUNK_MAX = 1990  # leave headroom below Discord's 2000-char hard limit
@@ -101,6 +109,55 @@ class PermissionView(discord.ui.View):
                 pass
 
 
+class ConfigSelectView(discord.ui.View):
+    """A generic discord.ui.View with a Select menu for choosing an ACP config option.
+
+    The current value is pre-selected.  After a selection the menu is disabled
+    and the message edited in-place.  Times out after 60 seconds.
+
+    Differentiate commands visually via the *placeholder* emoji:
+      /modes             → "🎯 Select a mode..."
+      /ai_models         → "🤖 Select a model..."
+      /reasoning_efforts → "🧠 Select a reasoning effort..."
+    """
+
+    def __init__(self, config_info: dict, on_select, placeholder: str = "Select..."):
+        super().__init__(timeout=60)
+        self.message: discord.Message | None = None
+        self._on_select = on_select
+        current_value = config_info.get("currentValue", "")
+        select_options = [
+            discord.SelectOption(
+                label=opt["name"],
+                value=opt["value"],
+                default=(opt["value"] == current_value),
+            )
+            for opt in config_info.get("options", [])
+        ]
+        select = discord.ui.Select(
+            placeholder=placeholder,
+            options=select_options,
+        )
+        select.callback = self._select_callback
+        self.add_item(select)
+
+    async def _select_callback(self, interaction: discord.Interaction):
+        selected_value = interaction.data["values"][0]
+        for child in self.children:
+            child.disabled = True
+        await interaction.response.edit_message(view=self)
+        await self._on_select(selected_value)
+
+    async def on_timeout(self):
+        for child in self.children:
+            child.disabled = True
+        if self.message is not None:
+            try:
+                await self.message.edit(view=self)
+            except Exception:
+                pass
+
+
 class ChannelDiscord(Channel):
 
     async def initialize(self, channel_name, channel_settings):
@@ -144,6 +201,9 @@ class ChannelDiscord(Channel):
         # Typing indicator task
         self._typing_task: asyncio.Task | None = None
         self._is_processing: bool = False
+
+        # ACP config options (populated from session/new response and config_option_update)
+        self.config_options: list = []
 
         # Last `sessionUpdate` value, for detecting change of chunk type
         self.last_session_update = None
@@ -225,6 +285,57 @@ class ChannelDiscord(Channel):
             if not text:
                 return
 
+            # --- config commands (/modes, /ai_models, /reasoning_efforts) ---
+            cmd = text.strip()
+            if cmd in ("/modes", "/ai_models", "/reasoning_efforts"):
+                await self._session_ready.wait()
+                config_map = {
+                    "/modes": ("mode", "🎯 Select a mode...", "mode"),
+                    "/ai_models": ("model", "🤖 Select a model...", "model"),
+                    "/reasoning_efforts": (
+                        "reasoning_effort",
+                        "🧠 Select a reasoning effort...",
+                        "reasoning effort",
+                    ),
+                }
+                config_id, placeholder, label = config_map[cmd]
+                config_info = next(
+                    (s for s in self.config_options if s["id"] == config_id), None
+                )
+                if config_info is None or not config_info.get("options"):
+                    await message.channel.send(f"No {label}s available.")
+                    return
+
+                async def on_config_select(value: str, _config_id: str = config_id):
+                    self.num_method_calls += 1
+                    acp_body = {
+                        "jsonrpc": "2.0",
+                        "id": self.num_method_calls,
+                        "method": "session/set_config_option",
+                        "params": {
+                            "sessionId": self.session_id,
+                            "configId": _config_id,
+                            "value": value,
+                        },
+                    }
+                    await self.log("dump", f"Config set request: {acp_body}")
+                    await self.handle_request_message(acp_body)
+
+                current_value = config_info.get("currentValue", "")
+                current_name = next(
+                    (
+                        o["name"]
+                        for o in config_info["options"]
+                        if o["value"] == current_value
+                    ),
+                    current_value,
+                )
+                view = ConfigSelectView(config_info, on_config_select, placeholder)
+                view.message = await message.channel.send(
+                    f"Current {label}: **{current_name}**", view=view
+                )
+                return
+
             # --- regular prompt ---
             if self._is_processing:
                 return
@@ -295,6 +406,9 @@ class ChannelDiscord(Channel):
             self._init_state = "ready"
             result = body.get("result", {})
             self.session_id = result.get("sessionId", None)
+            if "configOptions" in result:
+                self.config_options = result["configOptions"]
+                await self.log("info", "Received initial config options.")
             self._session_ready.set()
             msg = f"Session ready. session_id={self.session_id}"
             await self.log("info", msg)
@@ -324,6 +438,10 @@ class ChannelDiscord(Channel):
                         await self._flush_chunk()
                         text = "💭 " + text
                     await self._append_chunk(text)
+            elif session_update == "config_option_update":
+                if "configOptions" in update:
+                    self.config_options = update["configOptions"]
+                    await self.log("info", "config_options updated via notification.")
             # Other notification types (session_info_update, plan, …) are
             # intentionally ignored in this basic implementation.
             self.last_session_update = session_update
@@ -345,7 +463,9 @@ class ChannelDiscord(Channel):
                 acp_response = {
                     "jsonrpc": "2.0",
                     "id": id_,
-                    "result": {"outcome": {"outcome": "selected", "optionId": option_id}},
+                    "result": {
+                        "outcome": {"outcome": "selected", "optionId": option_id}
+                    },
                 }
                 await self.log("dump", f"Permission response: {acp_response}")
                 await self.handle_request_message(acp_response)
@@ -364,6 +484,9 @@ class ChannelDiscord(Channel):
         # ---- Method response (session/prompt complete, etc.) -------------
 
         result = body.get("result", {})
+        if "configOptions" in result:
+            self.config_options = result["configOptions"]
+            await self.log("info", "config_options updated via method response.")
         stop_reason = result.get("stopReason", "")
         if stop_reason:
             if self._typing_task is not None:
