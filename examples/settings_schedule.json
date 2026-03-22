@@ -4,6 +4,7 @@
             "plugin": "channel_discord",
             "channel_id": "${DISCORD_CHANNEL_ID}",
             "bot_token": "${DISCORD_BOT_TOKEN}",
+            "output_thought": false,
             "agent": "opencode"
         },
         "schedule": {

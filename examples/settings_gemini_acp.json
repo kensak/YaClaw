@@ -5,6 +5,7 @@
             "channel_id": "${DISCORD_CHANNEL_ID}",
             "bot_token": "${DISCORD_BOT_TOKEN}",
             "agent": "gemini",
+            "output_thought": false,
             "require_mention": false
         }
     },

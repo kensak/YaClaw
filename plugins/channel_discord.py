@@ -55,6 +55,7 @@ class ChannelDiscord(Channel):
         intents = discord.Intents.default()
         intents.message_content = True
         self.client = discord.Client(intents=intents)
+        self.output_thought = channel_settings.get("output_thought", False)
         self.require_mention = channel_settings.get("require_mention", False)
 
         self.channel_id = self.channel_settings.get("channel_id", None)
@@ -299,7 +300,7 @@ class ChannelDiscord(Channel):
                         text = "🗨️ " + text
                     await self._append_chunk(text)
             elif session_update == "agent_thought_chunk":
-                if text:
+                if self.output_thought and text:
                     if self.last_session_update != "agent_thought_chunk":
                         await self._flush_chunk()
                         text = "💭 " + text

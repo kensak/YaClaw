@@ -6,6 +6,7 @@
             "channel_id": "${DISCORD_CHANNEL_ID}",
             "bot_token": "${DISCORD_BOT_TOKEN}",
             "agent": "codex",
+            "output_thought": false,
             "require_mention": false
         }
     },

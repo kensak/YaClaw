@@ -101,6 +101,7 @@ class ChannelLine(Channel):
         self.host = channel_settings.get("host", "0.0.0.0")
         self.port = channel_settings.get("port", 8000)
         self.webhook_path = channel_settings.get("webhook_path", "/webhook")
+        self.output_thought = channel_settings.get("output_thought", False)
 
         # LINE SDK objects (kept alive for the duration of the channel)
         self.parser = WebhookParser(self.channel_secret)
@@ -329,7 +330,9 @@ class ChannelLine(Channel):
             params = body.get("params", {})
             update = params.get("update", {})
             session_update = update.get("sessionUpdate", "")
-            if session_update.endswith("_chunk"):
+            if session_update == "agent_message_chunk" or (
+                session_update == "agent_thought_chunk" and self.output_thought
+            ):
                 content = update.get("content", {})
                 if isinstance(content, list):
                     content = content[0] if content else {}
@@ -402,7 +405,7 @@ class ChannelLine(Channel):
 
     async def _send_accumulated(self):
         """Send the accumulated chunk body as a LINE reply, then reset state."""
-        text = self._current_body
+        text = self._current_body.lstrip()
         self._current_body = ""
 
         if not text:
