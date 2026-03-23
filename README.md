@@ -25,17 +25,13 @@
 
 **A simple bridge that lets you remotely control an AI coding CLI from Discord.**
 
-> **ACP support added!** YaClaw now connects to agents via the [Agent Client Protocol (ACP)](https://agentclientprotocol.com/) — a clean JSON-RPC 2.0 stdio transport — instead of driving CLIs over a pty. Now that ACP is available, all the `pty` craftworks are moved to the `historical` subfolder.
-
-> 🎉 **Good News!!!** Since `pty` is no longer used, **YaClaw now runs natively on Windows** — no WSL required!
-
->  **Another Good News!!!** YaClaw **now supports LINE!** Drop a LINE to your AI — anytime, anywhere.
+> **ACP-native messages!** YaClaw now uses [Agent Client Protocol (ACP)](https://agentclientprotocol.com/) JSON-RPC messages instead of plain text. Channels can leverage the full capabilities ACP offers — permission buttons, configuration menus, and much more to come.
 
 ---
 
 ## What does it do?
 
-YaClaw forwards messages you type in Discord / LINE directly to Codex CLI or Copilot CLI, then posts the AI's reply back to your channel. Because the agent runs on your own machine, **your full local environment is available — MCP config, file access, shell commands, everything.**
+YaClaw forwards messages from Discord or LINE to your AI coding CLI and posts the replies back to your channel. Since the agent runs on your own machine with your configured working directory, your full local environment is available as-is — **AGENTS.md, SOUL.md, MCP config, skills, file access, shell commands, everything.**
 
 ```
 You ──[Discord / LINE message]──▶ YaClaw ──▶ agent (Copilot / Codex / Gemini / OpenCode / …)
@@ -46,24 +42,26 @@ You ──[Discord / LINE message]──▶ YaClaw ──▶ agent (Copilot / Co
 
 ## Features
 
-- **ACP-based integration** — connects to any ACP-compatible CLI agent (Copilot, Codex, Gemini, OpenCode, …) via clean stdio JSON-RPC 2.0; no pty hacks
+- **ACP-based integration** — connects to any ACP-compatible CLI agent (Copilot, Codex, Gemini, OpenCode, …) via clean stdio JSON-RPC 2.0; channels can leverage ACP's full feature set — permission buttons, configuration menus, and more
 - **Persistent sessions** — the same session stays alive until you restart; no lost context
-- **Session continuation** — optionally resume the last session on startup (`-c`, `--continue`, `-r latest`)
-- **Thought output control** — enable/disable streaming of agent thought chunks per agent (`output_thought`)
-- **Your environment, intact** — MCP settings, skills, and your filesystem work exactly as they do locally
-- **Scheduler support** — send prompts to AI on a schedule to automate recurring tasks
+- **Session selection** — view available sessions and pick one to resume
+- **Thought output control** — enable/disable streaming of agent thought chunks per channel (`output_thought`)
+- **Your environment, intact** — MCP settings, skills, and your instructions (SOUL.md, etc.) work exactly as they do locally
+- **Scheduler support** — send prompts to an AI on a schedule to automate recurring tasks
 - **Plugin architecture** — add new channels and agents by dropping in a Python file
 - **Lightweight** — one command to launch: `uv run main.py`
 
 ---
 
-## Supported Channels & Agents
+## Available Channels & Agents
 
 | Type | Name | Plugin |
 |------|------|--------|
 | Channel | Discord | `channel_discord` |
 | Channel | LINE | `channel_line` — [setup guide](docs/channel_line_doc.md) |
 | Channel | Scheduler | `channel_schedule` |
+| Channel | Terminal (for testing) | `channel_terminal` |
+| Channel | Random Talker (for testing) | `channel_random_talker` |
 | Agent | Any ACP-compatible CLI (Copilot, Codex, Gemini, OpenCode, …) | `agent_acp` |
 | Agent | Echo (for testing) | `agent_echo` |
 
@@ -87,7 +85,7 @@ cd YaClaw
 
 ### Step 2: Create a `.env` file
 
-In case of Discord:
+For Discord:
 ```bash
 # .env
 DISCORD_BOT_TOKEN=your_bot_token_here
@@ -104,6 +102,7 @@ DISCORD_CHANNEL_ID=your_channel_id_here
             "channel_id": "${DISCORD_CHANNEL_ID}",
             "bot_token": "${DISCORD_BOT_TOKEN}",
             "agent": "opencode",
+            "output_thought": false,
             "require_mention": false
         }
     },
@@ -111,10 +110,8 @@ DISCORD_CHANNEL_ID=your_channel_id_here
         "opencode": {
             "plugin": "agent_acp",
             "command": "opencode",
-            "args": ["acp", "-c"],
-            "work_dir": "workspace/opencode",
-            "auto_approve": true,
-            "output_thought": false
+            "args": ["acp"],
+            "work_dir": "workspace/opencode"
         }
     }
 }
@@ -126,10 +123,8 @@ DISCORD_CHANNEL_ID=your_channel_id_here
 > | Key | Description |
 > |-----|-------------|
 > | `command` | The CLI executable to launch |
-> | `args` | Arguments passed to the CLI (include the ACP flag here, and optionally a session-resume flag) |
-> | `work_dir` | Working directory for the agent process |
-> | `auto_approve` | Auto-approve all tool-use permission requests (`true` for unattended use) |
-> | `output_thought` | Send agent thought chunks as a separate `💭 …` message (`false` by default) |
+> | `args` | Arguments passed to the CLI (include the ACP flag here) |
+> | `work_dir` | Working directory for the agent process and for all the sessions |
 
 ### Step 4: Launch
 
@@ -140,6 +135,18 @@ uv run main.py
 ### Step 5: Test it
 
 Send a message in your configured Discord / LINE channel. If the AI replies, you're good to go!
+
+---
+
+## Commands
+
+Only available when both the CLI agent and the channel support it.
+Each command displays a list of options and prompts the user to choose one.
+
+- /sessions — switch to a different session
+- /ai_models — change the AI model
+- /modes — change the agent mode
+- /reasoning_efforts — change the reasoning effort level
 
 ---
 
@@ -156,7 +163,7 @@ The `examples/` folder contains ready-to-use configurations.
 | `settings_line.json` | LINE Messaging API channel |
 | `settings_schedule.json` | Automated tasks via scheduler |
 | `settings_forward_test.json` | Agent-to-agent forwarding test |
-| `historical/` | Legacy configs for the old pty-based plugins |
+| `settings_terminal_conversation_test.json` | Terminal-to-agent test |
 
 ---
 
@@ -166,7 +173,7 @@ Logs are written to `log/log-YYYYMMDD.json`. Pipe to `jq` for flexible filtering
 
 ```bash
 # Show only trace-level logs
-cat log/log-20260301.json | jq -c -r 'select(.type == "trace") | [.time, .message] | join(" ")'
+cat log/log-20260101.json | jq -c -r 'select(.type == "trace" and .name == "main") | [.time, .message] | join(" ")'
 ```
 
 ---
@@ -185,9 +192,9 @@ Drop a Python file in the `plugins/` folder and define **exactly one** class tha
 
 ---
 
-### Channel Plugin (basic)
+### Channel Plugin
 
-See `plugins/channel_random_talker.py` for a minimal channel implementation.
+See `plugins/text_body/channel_random_talker_text_body.py` for a minimal text-body channel implementation.
 
 ```python
 from yaclaw.channel import Channel
@@ -228,61 +235,16 @@ class MyChannel(Channel):
 **Notes**
 
 - `handle_request_message(msg)` accepts either a **plain string** or a **dict** (request message).
-- `create_request_skeleton()` returns a dict with `from`, `to`, and `reply_to` pre-filled.
+- `create_request_skeleton()` returns a dict with `from_`, `to_`, and `reply_to` pre-filled.
 - `handle_response_message` is called serially via an internal queue — no need to worry about concurrent calls.
 
----
-
-### SNS / Bot Channel Plugin
-
-See `plugins/channel_discord.py` for an example that integrates with an external service.
-
-```python
-from yaclaw.channel import Channel
-
-class MySnsBotChannel(Channel):
-
-    async def initialize(self, channel_name, channel_settings):
-        # Read credentials from settings.json
-        self.token = channel_settings.get("bot_token", None)
-        if self.token is None:
-            return False   # Missing required setting — abort
-        self.client = MyBotClient()
-        return True
-
-    async def start_listener(self):
-        # Start the external library's async event loop here.
-        # This method should block until the loop ends.
-        @self.client.on_message
-        async def on_message(msg):
-            await self.handle_request_message(msg.text)
-
-        await self.client.start(self.token)
-
-    async def handle_response_message(self, response):
-        body = response.get("body", "")
-        if not body:          # Skip empty responses
-            return
-        await self.client.send(body)
-
-    async def stop(self):
-        await self.client.close()   # Always close the client cleanly
-
-    async def finalize(self):
-        pass
-```
-
-**Notes**
-
-- `await` the external library's event loop inside `start_listener`.
-- Guard against empty `response["body"]` to avoid sending blank messages.
-- Close your client in `stop` so the `asyncio.TaskGroup` can shut down cleanly.
+For an ACP-body channel implementation, see `plugins/channel_random_talker.py` — it demonstrates the ACP handshake and method/notification handlers. See `plugins/channel_discord.py` for a real-world example with an external service.
 
 ---
 
 ### Agent Plugin
 
-See `plugins/agent_echo.py` for a minimal agent implementation.
+See `plugins/text_body/agent_echo_text_body.py` for a minimal text-body agent implementation.
 
 ```python
 from yaclaw.agent import Agent
@@ -319,8 +281,12 @@ class MyAgent(Agent):
 **Notes**
 
 - `start_handler` and `handle_request_message` run **concurrently** inside an `asyncio.TaskGroup`.
-- Always use `create_response_skeleton(request)` — it handles forwarding chains (when `to` is a list) correctly.
+- Always use `create_response_skeleton(request)` — it handles forwarding chains (when `to_` is a list) correctly.
 - Calling `handle_response_message(response)` automatically routes the reply to the correct destination (channel or next agent) based on `response["to_"]`.
+
+For ACP-body agent implementations, see:
+- `plugins/agent_echo.py` for a minimal example.
+- `plugins/agent_acp.py` for a full-spec example that integrates with AI coding CLIs.
 
 </details>
 
@@ -380,7 +346,7 @@ If you build a plugin for a new channel or agent, feel free to share it.
 
 ## Disclaimer
 
-You are responsible for protecting against information leaks via external services and communication channels. AI tools may behave unexpectedly, including hallucinations. Take appropriate precautions for your data. The author is not liable for any damages resulting from use of this software.
+You are responsible for protecting against information leaks via external services and communication channels. AI tools may behave unexpectedly, including hallucinations. Take appropriate precautions to protect your data. The author is not liable for any damages resulting from use of this software.
 
 ---
 

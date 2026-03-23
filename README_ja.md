@@ -25,17 +25,13 @@
 
 **SNSからAIコーディングCLIをリモート操作する、シンプルなブリッジツール。**
 
-> **ACPサポートを追加！** YaClawは [Agent Client Protocol (ACP)](https://agentclientprotocol.com/)（クリーンな JSON-RPC 2.0 stdio トランスポート）を通じてエージェントへ接続するようになりました。ACP が利用可能になったことで、pty を使ったCLI操作に関するコードはすべて `historical` サブフォルダに移動しました。
-
-> 🎉 **Good News!!!** `pty` を使わなくなったため、**YaClaw は Windows でもネイティブに動作するようになりました** — WSL 不要！
-
->  **Another Good News!!!** YaClaw は **LINE をサポートしました！** いつでもどこでもあなたの AI と会話ができます。
+> **ACPネイティブメッセージ！** YaClawの標準プラグインはテキストの代わりに [Agent Client Protocol (ACP)](https://agentclientprotocol.com/) JSON-RPC オブジェクトをメッセージ・ボディーに使用するようになりました。チャンネルは許可ボタン、設定メニューなど ACP が提供する機能をフルに活用できます — さらに多くの機能が追加予定です。
 
 ---
 
 ## なにができるの？
 
-YaClawは、DiscordやLINEに書いたメッセージをそのままCodex CLIやCopilot CLIへ届け、AIの返答をチャンネルに投稿します。AIエージェントはあなたの開発マシン上で動き続けるため、**MCPの設定・ファイルアクセス・コマンド実行などの環境がまるごと使えます**。
+YaClawは、DiscordやLINEに書いたメッセージをAIコーディングCLIへ届け、AIの返答をチャンネルに投稿します。エージェントは設定した作業ディレクトリで、あなたのマシン上で動き続けるため、**AGENTS.md、SOUL.md、MCP設定、スキル、ファイルアクセス、コマンド実行など、ローカル環境がそのまま使えます**。
 
 ```
 あなた ─[Discord / LINEメッセージ]──▶ YaClaw ──▶ エージェント（Copilot / Codex / Gemini / OpenCode / …）
@@ -47,9 +43,9 @@ YaClawは、DiscordやLINEに書いたメッセージをそのままCodex CLIや
 
 ## 特徴
 
-- **ACP対応** — ACP対応のCLIエージェント（Copilot、Codex、Gemini、OpenCode等）へ stdio JSON-RPC 2.0 で接続。pty ハックは不要
+- **ACP対応** — ACP対応のCLIエージェント（Copilot、Codex、Gemini、OpenCode等）とチャンネルが stdio JSON-RPC 2.0 で接続。モデルを選択するメニューなど、豊富な機能がSNS上で利用可能です。
 - **セッション持続** — 再起動しない限り同じセッションが継続。会話の文脈が失われません
-- **セッション再開** — 起動時に前回セッションを任意で再開（`-c`、`--continue`、`-r latest`）
+- **セッション選択** — 利用可能なセッションを一覧表示し、再開するセッションを選択
 - **思考出力制御** — エージェントごとに思考チャンクのストリーミングを有効/無効化（`output_thought`）
 - **環境そのまま** — MCP設定・スキル・ファイルシステムなど、ローカル環境を完全に活用
 - **スケジューラー対応** — 定期的にAIへプロンプトを送り、自動タスクを実行
@@ -65,6 +61,8 @@ YaClawは、DiscordやLINEに書いたメッセージをそのままCodex CLIや
 | チャンネル | Discord | `channel_discord` |
 | チャンネル | LINE | `channel_line` — [設定ガイド](docs/ja/channel_line_doc_ja.md) |
 | チャンネル | スケジューラー | `channel_schedule` |
+| チャンネル | ターミナル（テスト用） | `channel_terminal` |
+| チャンネル | おしゃべり（テスト用） | `channel_random_talker` |
 | エージェント | ACP対応CLIすべて（Copilot、Codex、Gemini、OpenCode等） | `agent_acp` |
 | エージェント | エコー（テスト用） | `agent_echo` |
 
@@ -105,6 +103,7 @@ DISCORD_CHANNEL_ID=your_channel_id_here
             "channel_id": "${DISCORD_CHANNEL_ID}",
             "bot_token": "${DISCORD_BOT_TOKEN}",
             "agent": "opencode",
+            "output_thought": false,
             "require_mention": false
         }
     },
@@ -112,10 +111,8 @@ DISCORD_CHANNEL_ID=your_channel_id_here
         "opencode": {
             "plugin": "agent_acp",
             "command": "opencode",
-            "args": ["acp", "-c"],
-            "work_dir": "workspace/opencode",
-            "auto_approve": true,
-            "output_thought": false
+            "args": ["acp"],
+            "work_dir": "workspace/opencode"
         }
     }
 }
@@ -129,8 +126,6 @@ DISCORD_CHANNEL_ID=your_channel_id_here
 > | `command` | 起動するCLI実行ファイル |
 > | `args` | CLIへ渡す引数（ACPフラグやセッション再開フラグをここに指定） |
 > | `work_dir` | エージェントプロセスの作業ディレクトリ |
-> | `auto_approve` | すべてのツール使用許可リクエストを自動承認（無人利用時は `true`） |
-> | `output_thought` | エージェントの思考チャンクを `💭 …` メッセージとして送信（デフォルト `false`） |
 
 ### Step 4: 起動
 
@@ -141,6 +136,18 @@ uv run main.py
 ### Step 5: Discord / LINE で試す
 
 設定したチャンネルにメッセージを送り、AIからの返信が来れば成功です！
+
+---
+
+## コマンド
+
+AIコーディングCLIとチャンネルの双方が対応している場合のみ使用可能です。  
+それぞれのコマンドでは選択肢の一覧が表示され、ユーザーがその中から選ぶことができます。
+
+- /sessions — セッションの選択
+- /ai_models — AIモデルの変更
+- /modes — エージェント・モードの変更
+- /reasoning_efforts — 思考努力レベルの変更
 
 ---
 
@@ -157,17 +164,17 @@ uv run main.py
 | `settings_line.json` | LINE Messaging API チャンネル |
 | `settings_schedule.json` | スケジューラーを使った自動タスク |
 | `settings_forward_test.json` | エージェント間転送のテスト |
-| `historical/` | 旧来の pty ベースプラグイン用レガシー設定 |
+| `settings_terminal_conversation_test.json` | ターミナルでAIと会話するテスト |
 
 ---
 
 ## ログ
 
-ログは `log/log-YYYYMMDD.json` に記録されます。`jq` を使って柔軟にフィルタリングできます。
+ログは `log/log-YYYYMMDD.json` に記録されます。`jq` を使うと柔軟にフィルタリングできます。
 
 ```bash
 # trace ログのみ表示
-cat log/log-20260301.json | jq -c -r 'select(.type == "trace") | [.time, .message] | join(" ")'
+cat log/log-20260101.json | jq -c -r 'select(.type == "trace" and .name == "main") | [.time, .message] | join(" ")'
 ```
 
 ---
@@ -186,9 +193,9 @@ cat log/log-20260301.json | jq -c -r 'select(.type == "trace") | [.time, .messag
 
 ---
 
-### チャンネルプラグイン（基本）
+### チャンネルプラグイン
 
-シンプルなチャンネルの実装例として `plugins/channel_random_talker.py` を参考にしてください。
+シンプルな text-body チャンネルの実装例として `plugins/text_body/channel_random_talker_text_body.py` を参考にしてください。
 
 ```python
 from yaclaw.channel import Channel
@@ -229,62 +236,16 @@ class MyChannel(Channel):
 **ポイント**
 
 - `handle_request_message(msg)` の引数は **文字列** または **辞書（リクエストメッセージ）** のどちらでも可。
-- `create_request_skeleton()` を使うと `from` / `to` / `reply_to` が自動設定された辞書を取得できる。
+- `create_request_skeleton()` を使うと `from_` / `to_` / `reply_to` が自動設定された辞書を取得できる。
 - `handle_response_message` はフレームワーク内部のキューによってシリアライズされて呼び出されるため、並行呼び出しを心配する必要はない。
 
----
-
-### SNSチャンネルプラグイン
-
-Discord のような外部サービスと連携するチャンネルの実装例として `plugins/channel_discord.py` を参考にしてください。
-
-```python
-from yaclaw.channel import Channel
-
-class MySnsBotChannel(Channel):
-
-    async def initialize(self, channel_name, channel_settings):
-        # settings.json から認証情報などを読み取る
-        self.token = channel_settings.get("bot_token", None)
-        if self.token is None:
-            return False   # 必須設定が無ければ False で起動中止
-        # SDKクライアントの生成など
-        self.client = MyBotClient()
-        return True
-
-    async def start_listener(self):
-        # 外部ライブラリの非同期イベントループをここで起動する。
-        # この関数はループが終了するまでブロックし続ける。
-        @self.client.on_message
-        async def on_message(msg):
-            await self.handle_request_message(msg.text)
-
-        await self.client.start(self.token)
-
-    async def handle_response_message(self, response):
-        body = response.get("body", "")
-        if not body:          # 空返答はスキップ
-            return
-        await self.client.send(body)
-
-    async def stop(self):
-        await self.client.close()   # クライアントを適切にクローズする
-
-    async def finalize(self):
-        pass
-```
-
-**ポイント**
-
-- `start_listener` 内で外部ライブラリのイベントループを `await` する。
-- `response["body"]` が空の場合は何もしないなど、堅牢な実装を心がける。
-- `stop` でクライアントを必ずクローズし、`asyncio.TaskGroup` のタスクが正常終了できるようにする。
+ACP-body チャンネルの実装としては、`plugins/channel_random_talker.py`を参照してください。ACP ハンドシェークや method/notification の処理をおこなっています。SNSサービスと通信するより現実的な例としては `plugins/channel_discord.py` を参照してください。
 
 ---
 
 ### エージェントプラグイン
 
-エージェントの実装例として `plugins/agent_echo.py` を参考にしてください。
+text-body エージェントの実装例として `plugins/text_body/agent_echo_text_body.py` を参考にしてください。
 
 ```python
 from yaclaw.agent import Agent
@@ -323,6 +284,10 @@ class MyAgent(Agent):
 - `start_handler` と `handle_request_message` は **並行して** 動作する（`asyncio.TaskGroup`）。
 - `create_response_skeleton(request)` を必ず使うことで、転送チェーン（`to` がリストの場合）が正しく処理される。
 - `handle_response_message(response)` を呼ぶと、`response["to_"]` の宛先（チャンネルまたは次のエージェント）へ自動でルーティングされる。
+
+ACP-body エージェントの実装は以下の例を参考にしてください:
+- `plugins/agent_echo.py` もっとも簡単な例。
+- `plugins/agent_acp.py` AI コーディング CLI と連携する例。
 
 </details>
 

@@ -1,0 +1,19 @@
+{
+    "logging": {
+        "suppress_types": ["trace"]
+    },
+    "channel": {
+        "terminal": {
+            "plugin": "channel_terminal",
+            "agent": "opencode"
+        }
+    },
+    "agent": {
+        "opencode": {
+            "plugin": "agent_acp",
+            "command": "opencode",
+            "args": ["acp"],
+            "work_dir": "workspace/opencode"
+        }
+    }
+}
