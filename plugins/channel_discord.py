@@ -1,7 +1,11 @@
 import sys
 import asyncio
+import base64
+import io
+import json
 import time
 import random
+import re
 import discord
 from aiohttp.client_exceptions import ClientConnectorDNSError
 
@@ -58,6 +62,64 @@ _AUTO_FLUSH_DELAY = 5.0  # seconds after last chunk before auto-flushing
 
 # ACP PermissionOptionKind values that represent an allow action.
 _ALLOW_KINDS = {"allow_once", "allow_always"}
+
+# Mapping from MIME type to a sensible default filename for Discord uploads.
+_MIME_TO_EXT: dict[str, str] = {
+    "image/png": "image.png",
+    "image/jpeg": "image.jpg",
+    "image/gif": "image.gif",
+    "image/webp": "image.webp",
+    "image/svg+xml": "image.svg",
+    "audio/mpeg": "audio.mp3",
+    "audio/mp4": "audio.mp4",
+    "audio/ogg": "audio.ogg",
+    "audio/wav": "audio.wav",
+    "audio/webm": "audio.webm",
+    "video/mp4": "video.mp4",
+    "video/webm": "video.webm",
+    "application/pdf": "document.pdf",
+    "application/zip": "archive.zip",
+    "application/json": "data.json",
+    "text/plain": "text.txt",
+    "text/markdown": "document.md",
+    "text/html": "document.html",
+    "text/csv": "data.csv",
+}
+
+
+def _mime_to_filename(mime_type: str) -> str:
+    """Return a default filename for the given MIME type."""
+    return _MIME_TO_EXT.get(mime_type, "attachment.bin")
+
+
+def _filename_from_uri_and_mime(uri: str, mime_type: str) -> str:
+    """Derive a filename from *uri* if it has an extension, else fall back to MIME type."""
+    if uri:
+        path = uri.split("?")[0].rstrip("/")
+        basename = path.split("/")[-1]
+        if basename and "." in basename:
+            return basename
+    return _mime_to_filename(mime_type)
+
+
+def _extract_mcp_file_blocks(text: str) -> list[dict]:
+    """Try to parse *text* as an MCP tool result and return non-text content blocks.
+
+    MCP tools return results serialised as a JSON string with the shape:
+      {"content": [{"type": "image", "data": "...", "mimeType": "..."}, ...]}
+
+    If *text* is not valid JSON or does not match that shape, returns [].
+    """
+    try:
+        parsed = json.loads(text)
+    except (json.JSONDecodeError, TypeError):
+        return []
+    if not isinstance(parsed, dict):
+        return []
+    blocks = parsed.get("content", [])
+    if not isinstance(blocks, list):
+        return []
+    return [b for b in blocks if isinstance(b, dict) and b.get("type") != "text"]
 
 
 class PermissionView(discord.ui.View):
@@ -422,22 +484,49 @@ class ChannelDiscord(Channel):
             update = params.get("update", {})
             session_update = update.get("sessionUpdate", "")
             # self.last_session_update is used to detect when the type of chunk changes, so we can add separators or icons in the Discord message for better readability.
-            content = update.get("content", {})
-            if isinstance(content, list):
-                content = content[0] if content else {}
-            text = content.get("text", None)
             if session_update == "agent_message_chunk":
-                if text:
-                    if self.last_session_update != "agent_message_chunk":
+                raw_content = update.get("content", [])
+                if isinstance(raw_content, dict):
+                    raw_content = [raw_content]
+                is_new_sequence = self.last_session_update != "agent_message_chunk"
+                first_text = is_new_sequence
+                ch = await self._get_discord_channel()
+                for block in raw_content:
+                    block_type = block.get("type", "")
+                    if block_type == "text":
+                        text = block.get("text", "")
+                        if text:
+                            if first_text:
+                                await self._flush_chunk()
+                                text = "🗨️ " + text
+                                first_text = False
+                            await self._append_chunk(text)
+                    else:
                         await self._flush_chunk()
-                        text = "🗨️ " + text
-                    await self._append_chunk(text)
+                        if ch is not None:
+                            await self._send_file_block(block, ch)
             elif session_update == "agent_thought_chunk":
+                raw_content = update.get("content", {})
+                if isinstance(raw_content, list):
+                    raw_content = raw_content[0] if raw_content else {}
+                text = raw_content.get("text", None)
                 if self.output_thought and text:
                     if self.last_session_update != "agent_thought_chunk":
                         await self._flush_chunk()
                         text = "💭 " + text
                     await self._append_chunk(text)
+            elif session_update == "tool_call_update":
+                if update.get("status") == "completed":
+                    ch = await self._get_discord_channel()
+                    if ch is not None:
+                        for item in update.get("content", []):
+                            if item.get("type") == "content":
+                                inner = item.get("content", {})
+                                if inner.get("type") == "text":
+                                    for block in _extract_mcp_file_blocks(
+                                        inner.get("text", "")
+                                    ):
+                                        await self._send_file_block(block, ch)
             elif session_update == "config_option_update":
                 if "configOptions" in update:
                     self.config_options = update["configOptions"]
@@ -457,6 +546,7 @@ class ChannelDiscord(Channel):
             params = body.get("params", {})
             tool_call = params.get("toolCall", {})
             tool_call_id = tool_call.get("toolCallId", "")
+            title = tool_call.get("title", "")
             options = params.get("options", [])
 
             async def on_select(option_id: str):
@@ -476,12 +566,25 @@ class ChannelDiscord(Channel):
                 ch = await self.client.fetch_channel(self.channel_id)
             if ch:
                 view.message = await ch.send(
-                    f"Agent requests permission for tool call `{tool_call_id}`:",
+                    f"Agent requests permission for tool call `{tool_call_id}`: {title}",
                     view=view,
                 )
             return
 
         # ---- Method response (session/prompt complete, etc.) -------------
+
+        error = body.get("error", None)
+        if error:
+            code = error.get("code", 0)
+            message = error.get("message", "")
+            if code == -32602 and re.match(r"Session .* not found", message):
+                # Agent don't recognize the session ID anymore, likely due to an internal reset. Re-run the init sequence to get a new session ID.
+                self._init_state = "before_init"
+                self._initialized.clear()
+                self._session_ready.clear()
+                self.session_id = None
+                asyncio.get_event_loop().create_task(self._acp_init_task())
+            return
 
         result = body.get("result", {})
         if "configOptions" in result:
@@ -593,6 +696,76 @@ class ChannelDiscord(Channel):
         self._current_discord_msg = None
         self._last_edit_time = 0.0
         self.last_session_update = None
+
+    # ------------------------------------------------------------------
+    # File / attachment helpers
+    # ------------------------------------------------------------------
+
+    async def _send_file_block(self, block: dict, ch) -> None:
+        """Send a non-text ACP content block to Discord as a file upload or Embed.
+
+        Supported block types:
+          image / audio  — base64-encoded data → discord.File
+          resource       — blob (base64) or text → discord.File
+          resource_link  — URI reference → discord.Embed
+        """
+        block_type = block.get("type", "")
+        try:
+            if block_type in ("image", "audio"):
+                data_b64 = block.get("data", "")
+                mime_type = block.get("mimeType", "")
+                filename = _filename_from_uri_and_mime(block.get("uri", ""), mime_type)
+                raw = base64.b64decode(data_b64)
+                await ch.send(file=discord.File(io.BytesIO(raw), filename=filename))
+
+            elif block_type == "resource":
+                resource = block.get("resource", {})
+                uri = resource.get("uri", "")
+                mime_type = resource.get("mimeType", "")
+                filename = _filename_from_uri_and_mime(uri, mime_type)
+                blob = resource.get("blob")
+                if blob is not None:
+                    raw = base64.b64decode(blob)
+                    await ch.send(file=discord.File(io.BytesIO(raw), filename=filename))
+                else:
+                    text = resource.get("text", "")
+                    await ch.send(
+                        file=discord.File(
+                            io.BytesIO(text.encode("utf-8")), filename=filename
+                        )
+                    )
+
+            elif block_type == "resource_link":
+                uri = block.get("uri", "")
+                name = block.get("name") or uri
+                description = block.get("description", "")
+                mime_type = block.get("mimeType", "")
+                embed = discord.Embed(title=name)
+                if uri.startswith(("http://", "https://")):
+                    embed.url = uri
+                else:
+                    uri_line = f"`{uri}`"
+                    description = (
+                        f"{uri_line}\n{description}".strip()
+                        if description
+                        else uri_line
+                    )
+                if description:
+                    embed.description = description
+                if mime_type:
+                    embed.set_footer(text=mime_type)
+                await ch.send(embed=embed)
+
+            else:
+                await self.log(
+                    "warning",
+                    f"Unknown ACP content block type: {block_type!r}, skipping.",
+                )
+
+        except Exception as e:
+            await self.log(
+                "error", f"Failed to send file block (type={block_type!r}): {e}"
+            )
 
     # ------------------------------------------------------------------
     # stop / finalize

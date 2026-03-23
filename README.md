@@ -43,6 +43,9 @@ You ──[Discord / LINE message]──▶ YaClaw ──▶ agent (Copilot / Co
 ## Features
 
 - **ACP-based integration** — connects to any ACP-compatible CLI agent (Copilot, Codex, Gemini, OpenCode, …) via clean stdio JSON-RPC 2.0; channels can leverage ACP's full feature set — permission buttons, configuration menus, and more
+- **Select menu** — view available models, modes and reasoning effort levels and pick one
+- **Permission buttons** — grant permissions by tapping buttons
+- **Image and file support** — images and files returned by the agent are uploaded directly to Discord
 - **Persistent sessions** — the same session stays alive until you restart; no lost context
 - **Session selection** — view available sessions and pick one to resume
 - **Thought output control** — enable/disable streaming of agent thought chunks per channel (`output_thought`)

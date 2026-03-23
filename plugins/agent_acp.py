@@ -128,6 +128,7 @@ class HandlerACP(Agent):
                     stderr=asyncio.subprocess.PIPE,
                     cwd=self.work_dir,
                     env=env,
+                    limit=16 * 1024 * 1024,
                 )
             except FileNotFoundError:
                 msg = f"Command not found: {command}"
@@ -160,7 +161,6 @@ class HandlerACP(Agent):
             exit_code = self._process.returncode
             await self.log(
                 "trace",
-                "trace",
                 f"ACP process exited (code={exit_code}).",
             )
             self._id_map.clear()
@@ -173,7 +173,7 @@ class HandlerACP(Agent):
                 break
 
             # Brief delay before restarting to prevent a tight crash-restart loop.
-            await self.log("trace", f"Restarting in 3 seconds...")
+            await self.log("trace", "Restarting in 3 seconds...")
             await asyncio.sleep(3)
 
     # ------------------------------------------------------------------
