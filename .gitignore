@@ -13,4 +13,4 @@ wheels/
 test*.py
 log/
 no_git/
-
+.vscode/
