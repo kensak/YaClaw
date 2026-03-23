@@ -108,17 +108,38 @@ def _extract_mcp_file_blocks(text: str) -> list[dict]:
     MCP tools return results serialised as a JSON string with the shape:
       {"content": [{"type": "image", "data": "...", "mimeType": "..."}, ...]}
 
+    If *text* is not valid JSON, it might be a message from a tool indicating
+    that the output was too large and saved to a file. In that case, we try to
+    read the file and return its content as a block.
+
     If *text* is not valid JSON or does not match that shape, returns [].
     """
     try:
         parsed = json.loads(text)
     except (json.JSONDecodeError, TypeError):
+        # Check for "Output too large... Saved to: <path>"
+        # Tool output often looks like:
+        # Output too large to read at once (57.5 KB). Saved to: C:\Users\tmvbb\AppData\Local\Temp\1774257056272-copilot-tool-output-khk6n9.txt
+        match = re.search(r"Saved to:\s*(.+?\.txt)", text)
+        if match:
+            path = match.group(1).strip()
+            try:
+                with open(path, "r", encoding="utf-8") as f:
+                    file_content = f.read()
+                # Recursive call to parse the content of the file
+                return _extract_mcp_file_blocks(file_content)
+            except Exception as e:
+                print(f"Failed to read large output file {path}: {e}")
+                return []
         return []
+
     if not isinstance(parsed, dict):
         return []
+
     blocks = parsed.get("content", [])
     if not isinstance(blocks, list):
         return []
+
     return [b for b in blocks if isinstance(b, dict) and b.get("type") != "text"]
 
 
@@ -782,3 +803,4 @@ class ChannelDiscord(Channel):
 
     async def finalize(self):
         await self.log("trace", "Channel has been finalized.")
+
