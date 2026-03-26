@@ -1,6 +1,7 @@
 import sys
 import asyncio
 import base64
+import datetime
 import io
 import json
 import time
@@ -54,6 +55,14 @@ Typing indicator:
   Select placeholder emoji (🎯 / 🤖 / 🧠).  Choosing an option sends
   session/set_config_option to the agent.  The menu times out after 60 seconds.
   All three commands are available even while _is_processing is True.
+
+/sessions command:
+  Posts a Discord Select menu (SessionSelectView) listing available sessions.
+  All pages are fetched via session/list (pagination via nextCursor) before the
+  menu is shown.  After the user picks a session, session/load is sent.
+  Up to 25 sessions are shown (Discord's Select menu limit).
+  Available only when the agent advertises session_list / session_load
+  capabilities in its initialize response.
 """
 
 _CHUNK_MAX = 1990  # leave headroom below Discord's 2000-char hard limit
@@ -241,6 +250,66 @@ class ConfigSelectView(discord.ui.View):
                 pass
 
 
+def _format_session_label(session: dict) -> str:
+    """Format a session dict into a ≤100-char Discord SelectOption label."""
+    str_utc = session.get("updatedAt", "")
+    if str_utc:
+        try:
+            dt_utc = datetime.datetime.strptime(str_utc, "%Y-%m-%dT%H:%M:%S.%f%z")
+            dt_local = dt_utc.astimezone()
+            time_str = dt_local.strftime("%m/%d %H:%M")
+        except Exception:
+            time_str = str_utc[:10]
+    else:
+        time_str = "??/?? ??:??"
+    title = session.get("title", "") or session.get("sessionId", "")[:8]
+    label = f"{time_str} {title}"
+    return label[:100]
+
+
+class SessionSelectView(discord.ui.View):
+    """A discord.ui.View with a Select menu for picking a session to load.
+
+    Shows up to 25 sessions (Discord's Select max).  The current session is
+    pre-selected.  After selection the menu is disabled.  Times out after 60 s.
+    """
+
+    def __init__(self, sessions: list, on_select, current_session_id: str = ""):
+        super().__init__(timeout=60)
+        self.message: discord.Message | None = None
+        self._on_select = on_select
+        select_options = [
+            discord.SelectOption(
+                label=_format_session_label(s),
+                value=s["sessionId"],
+                default=(s["sessionId"] == current_session_id),
+            )
+            for s in sessions
+        ]
+        select = discord.ui.Select(
+            placeholder="📂 Select a session...",
+            options=select_options,
+        )
+        select.callback = self._select_callback
+        self.add_item(select)
+
+    async def _select_callback(self, interaction: discord.Interaction):
+        selected_value = interaction.data["values"][0]
+        for child in self.children:
+            child.disabled = True
+        await interaction.response.edit_message(view=self)
+        await self._on_select(selected_value)
+
+    async def on_timeout(self):
+        for child in self.children:
+            child.disabled = True
+        if self.message is not None:
+            try:
+                await self.message.edit(view=self)
+            except Exception:
+                pass
+
+
 class ChannelDiscord(Channel):
 
     async def initialize(self, channel_name, channel_settings):
@@ -290,6 +359,12 @@ class ChannelDiscord(Channel):
 
         # Last `sessionUpdate` value, for detecting change of chunk type
         self.last_session_update = None
+
+        # Session list state (populated by session/list responses)
+        self.sessions: list = []
+        self.cursor: str | None = None
+        self.capabilities: list = []
+        self._collecting_sessions: bool = False
 
         await self.log("trace", "Initialized.")
         return True
@@ -368,8 +443,30 @@ class ChannelDiscord(Channel):
             if not text:
                 return
 
-            # --- config commands (/modes, /ai_models, /reasoning_efforts) ---
+            # --- sessions command (/sessions) ---
             cmd = text.strip()
+            if cmd == "/sessions":
+                await self._session_ready.wait()
+                if "session_list" not in self.capabilities:
+                    await message.channel.send(
+                        "Session listing not supported by the agent."
+                    )
+                    return
+                self.sessions = []
+                self.cursor = None
+                self._collecting_sessions = True
+                self.num_method_calls += 1
+                acp_body = {
+                    "jsonrpc": "2.0",
+                    "id": self.num_method_calls,
+                    "method": "session/list",
+                    "params": {"cwd": "/dummy/dir"},
+                }
+                await self.log("dump", f"Session list request: {acp_body}")
+                await self.handle_request_message(acp_body)
+                return
+
+            # --- config commands (/modes, /ai_models, /reasoning_efforts) ---
             if cmd in ("/modes", "/ai_models", "/reasoning_efforts"):
                 await self._session_ready.wait()
                 config_map = {
@@ -479,6 +576,14 @@ class ChannelDiscord(Channel):
                     raise Exception(msg)
             else:
                 self._init_state = "before_session_new"
+                try:
+                    agent_capabilities = body["result"]["agentCapabilities"]
+                    if "list" in agent_capabilities.get("sessionCapabilities", {}):
+                        self.capabilities.append("session_list")
+                    if agent_capabilities.get("loadSession", False):
+                        self.capabilities.append("session_load")
+                except Exception:
+                    pass
             self._initialized.set()
             msg = "ACP initialization response received."
             await self.log("info", msg)
@@ -552,8 +657,20 @@ class ChannelDiscord(Channel):
                 if "configOptions" in update:
                     self.config_options = update["configOptions"]
                     await self.log("info", "config_options updated via notification.")
-            # Other notification types (session_info_update, plan, …) are
-            # intentionally ignored in this basic implementation.
+            elif session_update == "session_info_update":
+                session_id = params.get("sessionId", "")
+                title = update.get("title", None)
+                if title and session_id:
+                    session = next(
+                        (s for s in self.sessions if s.get("sessionId") == session_id),
+                        None,
+                    )
+                    if session is not None:
+                        session["title"] = title
+                        await self.log(
+                            "info", f"Session {session_id} title updated: {title}"
+                        )
+            # Other notification types (plan, …) are intentionally ignored.
             self.last_session_update = session_update
             return
 
@@ -611,6 +728,66 @@ class ChannelDiscord(Channel):
         if "configOptions" in result:
             self.config_options = result["configOptions"]
             await self.log("info", "config_options updated via method response.")
+
+        if "sessions" in result:
+            sessions = result["sessions"]
+            self.sessions.extend(sessions)
+            self.cursor = result.get("nextCursor", None)
+            await self.log(
+                "info",
+                f"Received {len(sessions)} sessions. cursor={self.cursor}",
+            )
+            if self.cursor is not None and self._collecting_sessions:
+                # Fetch next page
+                self.num_method_calls += 1
+                acp_body = {
+                    "jsonrpc": "2.0",
+                    "id": self.num_method_calls,
+                    "method": "session/list",
+                    "params": {"cwd": "/dummy/dir", "cursor": self.cursor},
+                }
+                await self.log("dump", f"Session list next page request: {acp_body}")
+                await self.handle_request_message(acp_body)
+            elif self._collecting_sessions:
+                # All pages collected — post Select menu
+                self._collecting_sessions = False
+                ch = await self._get_discord_channel()
+                if ch is not None:
+                    if not self.sessions:
+                        await ch.send("No sessions available.")
+                    else:
+
+                        async def on_session_select(session_id: str):
+                            if "session_load" not in self.capabilities:
+                                return
+                            self.num_method_calls += 1
+                            acp_body = {
+                                "jsonrpc": "2.0",
+                                "id": self.num_method_calls,
+                                "method": "session/load",
+                                "params": {
+                                    "sessionId": session_id,
+                                    "cwd": "/dummy/dir",
+                                    "mcpServers": [],
+                                },
+                            }
+                            await self.log("dump", f"Session load request: {acp_body}")
+                            await self.handle_request_message(acp_body)
+
+                        total = len(self.sessions)
+                        header = f"Total sessions: {total}"
+                        if total > 25:
+                            header += " (showing first 25)"
+                        view = SessionSelectView(
+                            self.sessions[:25], on_session_select, self.session_id or ""
+                        )
+                        view.message = await ch.send(header, view=view)
+            return
+
+        if "sessionId" in result and not result.get("stopReason"):
+            self.session_id = result["sessionId"]
+            await self.log("info", f"Session changed. session_id={self.session_id}")
+
         stop_reason = result.get("stopReason", "")
         if stop_reason:
             if self._typing_task is not None:
@@ -803,4 +980,3 @@ class ChannelDiscord(Channel):
 
     async def finalize(self):
         await self.log("trace", "Channel has been finalized.")
-
